@@ -68,7 +68,8 @@ body {
 
 #health-hearts {
     display: flex;
-    gap: 5px;
+    gap: 8px;
+    padding: 0 5px;
 }
 
 .heart {
