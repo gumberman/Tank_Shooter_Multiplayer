@@ -1,17 +1,6 @@
-// Shared game logic for both client and server
-// Works in both Node.js and browser without eval
+// Shared game logic - Browser version
+// Server uses shared/gameLogic.js
 
-// Get CONFIG based on environment
-let CONFIG;
-if (typeof require !== 'undefined') {
-    CONFIG = require('./constants.js').CONFIG;
-} else if (typeof window !== 'undefined') {
-    CONFIG = window.CONFIG;
-}
-
-/**
- * Seeded random number generator for consistent obstacle generation
- */
 function seededRandom(seed) {
     let value = seed;
     return function() {
@@ -20,9 +9,6 @@ function seededRandom(seed) {
     };
 }
 
-/**
- * Generate obstacles using a seed for consistency
- */
 function generateObstacles(seed = Math.random()) {
     const rng = seededRandom(seed);
     const obstacles = [];
@@ -88,9 +74,6 @@ function generateObstacles(seed = Math.random()) {
     return obstacles;
 }
 
-/**
- * Check if position collides with obstacles or tanks
- */
 function checkCollision(x, y, size, obstacles, tanks, excludeTankId = null) {
     for (let obs of obstacles) {
         if (x + size > obs.x &&
@@ -113,47 +96,19 @@ function checkCollision(x, y, size, obstacles, tanks, excludeTankId = null) {
     return false;
 }
 
-/**
- * Wrap position around canvas edges
- */
 function wrapPosition(pos, max) {
     if (pos < 0) return max + pos;
     if (pos > max) return pos - max;
     return pos;
 }
 
-/**
- * Normalize angle to 0-360 range
- */
 function normalizeAngle(angle) {
     return ((angle % 360) + 360) % 360;
 }
 
-/**
- * Calculate shortest angle difference (-180 to 180)
- */
 function angleDifference(from, to) {
     let diff = to - from;
     while (diff > 180) diff -= 360;
     while (diff < -180) diff += 360;
     return diff;
-}
-
-// Export for Node.js or attach to window for browser
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        seededRandom,
-        generateObstacles,
-        checkCollision,
-        wrapPosition,
-        normalizeAngle,
-        angleDifference
-    };
-} else if (typeof window !== 'undefined') {
-    window.seededRandom = seededRandom;
-    window.generateObstacles = generateObstacles;
-    window.checkCollision = checkCollision;
-    window.wrapPosition = wrapPosition;
-    window.normalizeAngle = normalizeAngle;
-    window.angleDifference = angleDifference;
 }
