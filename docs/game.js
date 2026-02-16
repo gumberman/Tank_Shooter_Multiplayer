@@ -1139,6 +1139,8 @@ class Game {
         this.lastServerUpdate = state.timestamp;
         this.teamScores = state.teamScores;
 
+        console.log('Received game state with', state.tanks.length, 'tanks');
+
         // Update server tank states
         for (const serverTank of state.tanks) {
             this.serverTanks.set(serverTank.id, serverTank);
@@ -1222,6 +1224,8 @@ class Game {
         const now = Date.now();
         const renderTime = now - CONFIG.INTERPOLATION_DELAY;
 
+        console.log('Interpolating', this.interpolationBuffers.size, 'remote players');
+
         // Update/create tanks for all remote players
         for (const [tankId, buffer] of this.interpolationBuffers.entries()) {
             if (buffer.length === 0) continue;
@@ -1259,6 +1263,7 @@ class Game {
             // Find or create tank
             let tank = this.tanks.find(t => t.id === tankId);
             if (!tank) {
+                console.log('Creating remote tank:', tankId, older.name);
                 tank = new Tank(
                     older.x,
                     older.y,
@@ -1271,6 +1276,7 @@ class Game {
                 tank.name = older.name;
                 tank.isBot = older.isBot || false;
                 this.tanks.push(tank);
+                console.log('Total tanks now:', this.tanks.length);
             }
 
             // Interpolate position
