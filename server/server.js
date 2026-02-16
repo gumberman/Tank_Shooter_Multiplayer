@@ -140,6 +140,33 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Add bot
+    socket.on('addBot', ({ team }) => {
+        try {
+            const room = roomManager.getPlayerRoom(socket.id);
+            if (!room) {
+                socket.emit('error', { message: 'Not in a room' });
+                return;
+            }
+
+            if (room.state !== 'lobby') {
+                socket.emit('error', { message: 'Cannot add bots after game started' });
+                return;
+            }
+
+            room.addBot(team);
+            io.to(room.code).emit('botAdded', {
+                team: team,
+                players: room.getPlayerList()
+            });
+
+            console.log(`[${new Date().toISOString()}] Bot added to team ${team} in room ${room.code}`);
+        } catch (error) {
+            socket.emit('error', { message: error.message });
+            console.error(`[${new Date().toISOString()}] Add bot error:`, error.message);
+        }
+    });
+
     // Leave room
     socket.on('leaveRoom', () => {
         handleDisconnect(socket.id);

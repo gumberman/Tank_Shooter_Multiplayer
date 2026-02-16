@@ -60,6 +60,37 @@ class Room {
     }
 
     /**
+     * Add a bot to specified team
+     */
+    addBot(team) {
+        if (this.isFull()) {
+            throw new Error('Room is full');
+        }
+
+        if (team !== 1 && team !== 2) {
+            throw new Error('Invalid team number');
+        }
+
+        // Count bots on this team
+        let teamBotCount = 0;
+        for (const player of this.players.values()) {
+            if (player.team === team && player.id.startsWith('lobby_bot_')) {
+                teamBotCount++;
+            }
+        }
+
+        const botId = `lobby_bot_${team}_${Date.now()}`;
+        const botName = `Bot ${teamBotCount + 1}`;
+
+        this.players.set(botId, {
+            id: botId,
+            name: botName,
+            team: team,
+            isBot: true
+        });
+    }
+
+    /**
      * Get team assignment that balances teams
      */
     getBalancedTeam() {

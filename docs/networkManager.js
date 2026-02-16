@@ -58,6 +58,7 @@ class NetworkManager {
                 'playerLeft',
                 'playerDisconnected',
                 'teamChanged',
+                'botAdded',
                 'gameStart',
                 'gameState',
                 'gameOver',
@@ -136,6 +137,14 @@ class NetworkManager {
     switchTeam(team) {
         if (!this.connected) return;
         this.socket.emit('switchTeam', { team });
+    }
+
+    /**
+     * Add bot to team in lobby
+     */
+    addBot(team) {
+        if (!this.connected) return;
+        this.socket.emit('addBot', { team });
     }
 
     /**

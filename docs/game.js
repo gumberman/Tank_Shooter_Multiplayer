@@ -890,6 +890,8 @@ class Game {
         document.getElementById('leave-btn').addEventListener('click', () => this.leaveRoom());
         document.getElementById('join-green-btn').addEventListener('click', () => this.switchTeam(1));
         document.getElementById('join-red-btn').addEventListener('click', () => this.switchTeam(2));
+        document.getElementById('add-green-bot-btn').addEventListener('click', () => this.addBot(1));
+        document.getElementById('add-red-bot-btn').addEventListener('click', () => this.addBot(2));
         document.getElementById('play-again-btn').addEventListener('click', () => this.playAgain());
     }
 
@@ -994,6 +996,12 @@ class Game {
             this.updateLobbyPlayers(data.players);
         });
 
+        // Bot added
+        this.networkManager.on('botAdded', (data) => {
+            console.log('Bot added:', data);
+            this.updateLobbyPlayers(data.players);
+        });
+
         // Game start
         this.networkManager.on('gameStart', (data) => {
             console.log('Game starting:', data);
@@ -1075,6 +1083,12 @@ class Game {
     switchTeam(team) {
         if (this.networkManager && this.networkManager.isConnected()) {
             this.networkManager.switchTeam(team);
+        }
+    }
+
+    addBot(team) {
+        if (this.networkManager && this.networkManager.isConnected()) {
+            this.networkManager.addBot(team);
         }
     }
 
@@ -1210,24 +1224,31 @@ class Game {
 
         // Update/create tanks for all remote players
         for (const [tankId, buffer] of this.interpolationBuffers.entries()) {
-            if (buffer.length < 2) continue;
+            if (buffer.length === 0) continue;
 
-            // Find two snapshots to interpolate between
-            let older = null;
-            let newer = null;
+            let older, newer;
 
-            for (let i = 0; i < buffer.length - 1; i++) {
-                if (buffer[i].timestamp <= renderTime && buffer[i + 1].timestamp >= renderTime) {
-                    older = buffer[i];
-                    newer = buffer[i + 1];
-                    break;
+            // If we only have 1 snapshot, use it directly (no interpolation)
+            if (buffer.length === 1) {
+                older = newer = buffer[0];
+            } else {
+                // Find two snapshots to interpolate between
+                older = null;
+                newer = null;
+
+                for (let i = 0; i < buffer.length - 1; i++) {
+                    if (buffer[i].timestamp <= renderTime && buffer[i + 1].timestamp >= renderTime) {
+                        older = buffer[i];
+                        newer = buffer[i + 1];
+                        break;
+                    }
                 }
-            }
 
-            if (!older || !newer) {
-                // Use latest if no interpolation range found
-                older = buffer[buffer.length - 2];
-                newer = buffer[buffer.length - 1];
+                if (!older || !newer) {
+                    // Use latest if no interpolation range found
+                    older = buffer[buffer.length - 2];
+                    newer = buffer[buffer.length - 1];
+                }
             }
 
             // Calculate interpolation factor
@@ -1248,7 +1269,7 @@ class Game {
                     older.number || 1
                 );
                 tank.name = older.name;
-                tank.isBot = older.isBot;
+                tank.isBot = older.isBot || false;
                 this.tanks.push(tank);
             }
 
