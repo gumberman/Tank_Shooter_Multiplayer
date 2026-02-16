@@ -61,8 +61,9 @@ class Tank {
 
     moveForward(obstacles, tanks) {
         const rad = this.rotation * Math.PI / 180;
-        let newX = this.x + Math.cos(rad) * CONFIG.TANK_SPEED;
-        let newY = this.y + Math.sin(rad) * CONFIG.TANK_SPEED;
+        const speedModifier = this.getEdgeSpeedModifier();
+        let newX = this.x + Math.cos(rad) * CONFIG.TANK_SPEED * speedModifier;
+        let newY = this.y + Math.sin(rad) * CONFIG.TANK_SPEED * speedModifier;
 
         // Wraparound at edges
         newX = this.wrapPosition(newX, CONFIG.CANVAS_WIDTH);
@@ -76,8 +77,9 @@ class Tank {
 
     moveBackward(obstacles, tanks) {
         const rad = this.rotation * Math.PI / 180;
-        let newX = this.x - Math.cos(rad) * CONFIG.TANK_SPEED;
-        let newY = this.y - Math.sin(rad) * CONFIG.TANK_SPEED;
+        const speedModifier = this.getEdgeSpeedModifier();
+        let newX = this.x - Math.cos(rad) * CONFIG.TANK_SPEED * 0.65 * speedModifier;
+        let newY = this.y - Math.sin(rad) * CONFIG.TANK_SPEED * 0.65 * speedModifier;
 
         // Wraparound at edges
         newX = this.wrapPosition(newX, CONFIG.CANVAS_WIDTH);
@@ -93,6 +95,18 @@ class Tank {
         if (pos < 0) return pos + max;
         if (pos > max) return pos - max;
         return pos;
+    }
+
+    getEdgeSpeedModifier() {
+        const edgeThreshold = 200; // Distance from edge where slowdown begins
+        const minDistX = Math.min(this.x, CONFIG.CANVAS_WIDTH - this.x);
+        const minDistY = Math.min(this.y, CONFIG.CANVAS_HEIGHT - this.y);
+        const minDist = Math.min(minDistX, minDistY);
+
+        if (minDist < edgeThreshold) {
+            return 0.75; // 75% speed near edges
+        }
+        return 1.0; // Normal speed
     }
 
     canMoveTo(newX, newY, obstacles, tanks) {
@@ -125,17 +139,23 @@ class Tank {
         return Date.now() - this.lastShot >= CONFIG.SHOOT_COOLDOWN;
     }
 
-    shoot() {
+    shoot(obstacles = [], tanks = []) {
         if (this.canShoot()) {
             this.lastShot = Date.now();
             const rad = this.rotation * Math.PI / 180;
             const bulletX = this.x + Math.cos(rad) * (CONFIG.TANK_SIZE / 2 + 10);
             const bulletY = this.y + Math.sin(rad) * (CONFIG.TANK_SIZE / 2 + 10);
 
-            // Apply recoil - push tank backwards
+            // Apply recoil - push tank backwards (only if valid position)
             const recoilDistance = 15;
-            this.x -= Math.cos(rad) * recoilDistance;
-            this.y -= Math.sin(rad) * recoilDistance;
+            const newX = this.x - Math.cos(rad) * recoilDistance;
+            const newY = this.y - Math.sin(rad) * recoilDistance;
+
+            // Only apply recoil if it won't cause collision
+            if (this.canMoveTo(newX, newY, obstacles, tanks)) {
+                this.x = newX;
+                this.y = newY;
+            }
 
             return new Bullet(bulletX, bulletY, this.rotation, this.id, this.team);
         }
@@ -1564,7 +1584,7 @@ class Game {
 
         // Shooting (only in practice mode - server handles in multiplayer)
         if (input.space && this.gameMode === 'practice') {
-            const bullet = this.playerTank.shoot();
+            const bullet = this.playerTank.shoot(this.obstacles, this.tanks);
             if (bullet) {
                 this.bullets.push(bullet);
                 // Muzzle flash particles
@@ -1790,7 +1810,7 @@ class Game {
                 const confidence = shotQuality * personality.accuracyModifier;
 
                 if (confidence > 0.6 && interceptData.canShootNow) {
-                    const bullet = tank.shoot();
+                    const bullet = tank.shoot(this.obstacles, this.tanks);
                     if (bullet) {
                         tank.shotsFired++;
                         this.bullets.push(bullet);
@@ -1837,7 +1857,7 @@ class Game {
                 const confidence = shotQuality * personality.accuracyModifier;
 
                 if (confidence > 0.5 && interceptData.canShootNow && hasLineOfSight && Math.random() < 0.5) {
-                    const bullet = tank.shoot();
+                    const bullet = tank.shoot(this.obstacles, this.tanks);
                     if (bullet) {
                         tank.shotsFired++;
                         this.bullets.push(bullet);
@@ -1881,7 +1901,7 @@ class Game {
                     const confidence = shotQuality * personality.accuracyModifier;
 
                     if (confidence > 0.4) { // Lower threshold when fleeing
-                        const bullet = tank.shoot();
+                        const bullet = tank.shoot(this.obstacles, this.tanks);
                         if (bullet) {
                             tank.shotsFired++;
                             this.bullets.push(bullet);
@@ -1919,7 +1939,7 @@ class Game {
                     const confidence = shotQuality * personality.accuracyModifier;
 
                     if (confidence > 0.7) { // Higher threshold from cover (patient shots)
-                        const bullet = tank.shoot();
+                        const bullet = tank.shoot(this.obstacles, this.tanks);
                         if (bullet) {
                             tank.shotsFired++;
                             this.bullets.push(bullet);
@@ -2139,6 +2159,9 @@ class Game {
         // Draw grid
         this.drawGrid();
 
+        // Draw slow zones (visual indicator for edge slowdown)
+        this.drawSlowZones();
+
         // Draw obstacles
         this.ctx.fillStyle = '#1a2e24';
         for (let obs of this.obstacles) {
@@ -2230,6 +2253,61 @@ class Game {
             this.ctx.lineTo(CONFIG.CANVAS_WIDTH, y);
             this.ctx.stroke();
         }
+    }
+
+    drawSlowZones() {
+        const edgeThreshold = 200; // Must match the threshold in getEdgeSpeedModifier()
+
+        // Draw semi-transparent overlay for slow zones with diagonal stripe pattern
+        this.ctx.save();
+
+        // Create a diagonal stripe pattern
+        const patternCanvas = document.createElement('canvas');
+        patternCanvas.width = 20;
+        patternCanvas.height = 20;
+        const patternCtx = patternCanvas.getContext('2d');
+
+        // Draw diagonal stripes
+        patternCtx.strokeStyle = 'rgba(139, 69, 19, 0.15)'; // Brown-ish tint
+        patternCtx.lineWidth = 3;
+        patternCtx.beginPath();
+        patternCtx.moveTo(0, 20);
+        patternCtx.lineTo(20, 0);
+        patternCtx.stroke();
+        patternCtx.beginPath();
+        patternCtx.moveTo(0, 0);
+        patternCtx.lineTo(10, 0);
+        patternCtx.lineTo(0, 10);
+        patternCtx.fill();
+
+        const pattern = this.ctx.createPattern(patternCanvas, 'repeat');
+        this.ctx.fillStyle = pattern;
+
+        // Draw top border
+        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
+
+        // Draw bottom border
+        this.ctx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
+
+        // Draw left border (excluding corners already drawn)
+        this.ctx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+
+        // Draw right border (excluding corners already drawn)
+        this.ctx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+
+        // Add a subtle darker overlay to make it more visible
+        this.ctx.fillStyle = 'rgba(101, 67, 33, 0.08)'; // Muddy brown overlay
+
+        // Top
+        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
+        // Bottom
+        this.ctx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
+        // Left
+        this.ctx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+        // Right
+        this.ctx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+
+        this.ctx.restore();
     }
 
     updateUI() {
