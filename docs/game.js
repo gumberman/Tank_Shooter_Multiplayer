@@ -1194,12 +1194,12 @@ class Game {
         const dist = Math.hypot(dx, dy);
 
         // Snap if large difference (> 50px)
-        if (dist > CONFIG.NETWORK.POSITION_CORRECTION_THRESHOLD) {
+        if (dist > NETWORK.POSITION_CORRECTION_THRESHOLD) {
             this.playerTank.x = serverTank.x;
             this.playerTank.y = serverTank.y;
         }
         // Smooth correction for medium differences (10-50px)
-        else if (dist > CONFIG.NETWORK.POSITION_LERP_THRESHOLD) {
+        else if (dist > NETWORK.POSITION_LERP_THRESHOLD) {
             this.playerTank.x += dx * 0.2;
             this.playerTank.y += dy * 0.2;
         }
