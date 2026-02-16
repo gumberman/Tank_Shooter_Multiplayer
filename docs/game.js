@@ -1116,6 +1116,9 @@ class Game {
             this.playerTank.name = playerInfo.name;
             this.tanks.push(this.playerTank);
         }
+
+        this.gameRunning = true;
+        this.updateUI();
     }
 
     handleGameState(state) {
