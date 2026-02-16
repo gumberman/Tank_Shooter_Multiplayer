@@ -1,32 +1,7 @@
-// Game Configuration
-const CONFIG = {
-    CANVAS_WIDTH: 2400,
-    CANVAS_HEIGHT: 2400,
-    TANK_SIZE: 120, // Much larger for visibility
-    TANK_SPEED: 5,
-    BULLET_SPEED: 17, // 40% faster than original 12
-    BULLET_RADIUS: 12,
-    SHOOT_COOLDOWN: 1000, // 1 second
-    MAX_HEALTH: 3,
-    WIN_SCORE: 24, // First team to 24 kills
-    ROTATION_SPEED: 2,
-    NUM_OBSTACLES: Math.floor(Math.random() * 6) + 3, // Random 3-8 obstacles
-    TICK_RATE: 16,
-    MAX_TEAM_SIZE: 3, // For testing
-    BASE_RESPAWN_TIME: 1000, // 1 second base
-    RESPAWN_INCREMENT: 2000, // +2 seconds per death
-    MAX_RESPAWN_TIME: 20000 // 20 seconds max
-};
-
-// Team colors - one solid color per team
-const TEAM_COLORS = {
-    1: '#00ff00', // Green team
-    2: '#ff0000'  // Red team
-};
-
 // ============================================
 // CLASSES
 // ============================================
+// Note: CONFIG and TEAM_COLORS are loaded from constants.js
 
 class Tank {
     constructor(x, y, color, id, isPlayer = false, team = 1, number = 1) {
