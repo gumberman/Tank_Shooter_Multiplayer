@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Brawl - 2D Multiplayer Tank Shooter</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-overlay">
+            <div id="top-bar">
+                <div id="health-display">
+                    <span>Health: </span>
+                    <div id="health-hearts"></div>
+                </div>
+                <div id="score-display"><span id="score">Green: 0 | Red: 0</span></div>
+                <div id="ammo-display">
+                    <span>Ready: </span>
+                    <div id="ammo-indicator" class="ready"></div>
+                </div>
+            </div>
+            <div id="scoreboard">
+                <h3>Scoreboard</h3>
+                <div id="player-list"></div>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="2400" height="2400"></canvas>
+
+        <div id="menu-overlay" class="active">
+            <div id="menu">
+                <h1>Tank Brawl</h1>
+                <p class="subtitle">2D Multiplayer Tank Shooter</p>
+
+                <div id="menu-content">
+                    <div id="main-menu">
+                        <button id="create-game-btn" class="menu-btn primary">Create Game</button>
+                        <button id="join-game-btn" class="menu-btn">Join Game</button>
+                        <button id="practice-btn" class="menu-btn">Practice Mode</button>
+                    </div>
+
+                    <div id="join-menu" style="display: none;">
+                        <input type="text" id="room-code-input" placeholder="Enter Room Code">
+                        <button id="join-room-btn" class="menu-btn primary">Join Room</button>
+                        <button id="back-btn" class="menu-btn">Back</button>
+                    </div>
+
+                    <div id="lobby" style="display: none;">
+                        <h2>Room Code: <span id="room-code"></span></h2>
+                        <p class="info">Share this code with friends!</p>
+                        <div id="lobby-players"></div>
+                        <button id="start-game-btn" class="menu-btn primary">Start Game</button>
+                        <button id="leave-btn" class="menu-btn">Leave</button>
+                    </div>
+                </div>
+
+                <div id="controls-info">
+                    <h3>Controls</h3>
+                    <p><strong>W</strong> - Move Forward | <strong>S</strong> - Move Backward</p>
+                    <p><strong>A</strong> - Turn Left | <strong>D</strong> - Turn Right</p>
+                    <p><strong>SPACE</strong> - Shoot</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-over-overlay" style="display: none;">
+            <div id="game-over-menu">
+                <h1 id="game-over-title">Game Over</h1>
+                <p id="game-over-message"></p>
+                <div id="final-scoreboard"></div>
+                <button id="play-again-btn" class="menu-btn primary">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.io Client -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+
+    <!-- Shared code -->
+    <script src="../shared/constants.js"></script>
+    <script src="../shared/gameLogic.js"></script>
+
+    <!-- Client code -->
+    <script src="networkManager.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
