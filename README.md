@@ -51,7 +51,7 @@ A fast-paced 3v3 team-based tank shooter game with online multiplayer support.
 
 ```
 /Tank_Shooter_Multiplayer
-├── /client                 # Frontend (GitHub Pages)
+├── /docs                   # Frontend (GitHub Pages)
 │   ├── index.html
 │   ├── game.js
 │   ├── networkManager.js

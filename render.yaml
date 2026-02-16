@@ -10,5 +10,5 @@ services:
       - key: NODE_ENV
         value: production
       - key: CLIENT_URL
-        value: https://yourusername.github.io/Tank_Shooter_Multiplayer
+        value: https://gumberman.github.io/Tank_Shooter_Multiplayer
     healthCheckPath: /health
