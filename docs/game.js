@@ -1183,7 +1183,7 @@ class Game {
         }
 
         // Update UI
-        this.updateScoreboard();
+        this.updateUI();
     }
 
     reconcilePlayerTank() {
