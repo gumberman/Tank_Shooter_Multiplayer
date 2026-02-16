@@ -112,6 +112,34 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Switch team
+    socket.on('switchTeam', ({ team }) => {
+        try {
+            const room = roomManager.getPlayerRoom(socket.id);
+            if (!room) {
+                socket.emit('error', { message: 'Not in a room' });
+                return;
+            }
+
+            if (room.state !== 'lobby') {
+                socket.emit('error', { message: 'Cannot switch teams after game started' });
+                return;
+            }
+
+            room.switchPlayerTeam(socket.id, team);
+            io.to(room.code).emit('teamChanged', {
+                playerId: socket.id,
+                team: team,
+                players: room.getPlayerList()
+            });
+
+            console.log(`[${new Date().toISOString()}] Player ${socket.id} switched to team ${team} in room ${room.code}`);
+        } catch (error) {
+            socket.emit('error', { message: error.message });
+            console.error(`[${new Date().toISOString()}] Switch team error:`, error.message);
+        }
+    });
+
     // Leave room
     socket.on('leaveRoom', () => {
         handleDisconnect(socket.id);

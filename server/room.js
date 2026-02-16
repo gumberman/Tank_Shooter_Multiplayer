@@ -44,6 +44,22 @@ class Room {
     }
 
     /**
+     * Switch player's team
+     */
+    switchPlayerTeam(playerId, newTeam) {
+        const player = this.players.get(playerId);
+        if (!player) {
+            throw new Error('Player not found in room');
+        }
+
+        if (newTeam !== 1 && newTeam !== 2) {
+            throw new Error('Invalid team number');
+        }
+
+        player.team = newTeam;
+    }
+
+    /**
      * Get team assignment that balances teams
      */
     getBalancedTeam() {

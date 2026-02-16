@@ -49,6 +49,15 @@
                     <div id="lobby" style="display: none;">
                         <h2>Room Code: <span id="room-code"></span></h2>
                         <p class="info">Share this code with friends!</p>
+
+                        <div style="margin: 20px 0;">
+                            <p style="margin-bottom: 10px;"><strong>Choose Your Team:</strong></p>
+                            <div style="display: flex; gap: 10px; justify-content: center;">
+                                <button id="join-green-btn" class="menu-btn" style="background: #00aa00;">Join Green Team</button>
+                                <button id="join-red-btn" class="menu-btn" style="background: #aa0000;">Join Red Team</button>
+                            </div>
+                        </div>
+
                         <div id="lobby-players"></div>
                         <button id="start-game-btn" class="menu-btn primary">Start Game</button>
                         <button id="leave-btn" class="menu-btn">Leave</button>
@@ -78,8 +87,8 @@
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 
     <!-- Shared code -->
-    <script src="../shared/constants.js"></script>
-    <script src="../shared/gameLogic.js"></script>
+    <script src="constants.js"></script>
+    <script src="gameLogic.js"></script>
 
     <!-- Client code -->
     <script src="networkManager.js"></script>

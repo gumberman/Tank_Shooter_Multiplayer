@@ -888,6 +888,8 @@ class Game {
         document.getElementById('join-room-btn').addEventListener('click', () => this.joinRoom());
         document.getElementById('start-game-btn').addEventListener('click', () => this.startMultiplayerGame());
         document.getElementById('leave-btn').addEventListener('click', () => this.leaveRoom());
+        document.getElementById('join-green-btn').addEventListener('click', () => this.switchTeam(1));
+        document.getElementById('join-red-btn').addEventListener('click', () => this.switchTeam(2));
         document.getElementById('play-again-btn').addEventListener('click', () => this.playAgain());
     }
 
@@ -986,6 +988,12 @@ class Game {
             this.updateLobbyPlayers();
         });
 
+        // Team changed
+        this.networkManager.on('teamChanged', (data) => {
+            console.log('Team changed:', data);
+            this.updateLobbyPlayers(data.players);
+        });
+
         // Game start
         this.networkManager.on('gameStart', (data) => {
             console.log('Game starting:', data);
@@ -1062,6 +1070,12 @@ class Game {
             this.networkManager = null;
         }
         this.showMainMenu();
+    }
+
+    switchTeam(team) {
+        if (this.networkManager && this.networkManager.isConnected()) {
+            this.networkManager.switchTeam(team);
+        }
     }
 
     startMultiplayerGameClient(data) {

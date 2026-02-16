@@ -57,6 +57,7 @@ class NetworkManager {
                 'playerJoined',
                 'playerLeft',
                 'playerDisconnected',
+                'teamChanged',
                 'gameStart',
                 'gameState',
                 'gameOver',
@@ -127,6 +128,14 @@ class NetworkManager {
             input: input,
             timestamp: Date.now()
         });
+    }
+
+    /**
+     * Switch team in lobby
+     */
+    switchTeam(team) {
+        if (!this.connected) return;
+        this.socket.emit('switchTeam', { team });
     }
 
     /**
