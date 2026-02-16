@@ -54,7 +54,7 @@ class GameServer {
         const players = this.room.getPlayerList();
         let tankNumber = 1;
 
-        // Create human player tanks
+        // Create tanks for all players (including lobby bots)
         for (const player of players) {
             const spawnPos = this.findSafeSpawn(player.team);
             const tank = {
@@ -69,8 +69,8 @@ class GameServer {
                 score: 0,
                 deaths: 0,
                 lastShot: 0,
-                isPlayer: true,
-                isBot: false,
+                isPlayer: !player.isBot, // Respect lobby bot flag
+                isBot: player.isBot || false, // Lobby bots are already marked
                 name: player.name,
                 respawning: false,
                 respawnTimer: 0,
@@ -79,36 +79,11 @@ class GameServer {
             this.tanks.set(tank.id, tank);
         }
 
-        // Fill remaining slots with AI bots (up to 3 per team)
-        for (let team = 1; team <= 2; team++) {
-            const teamCount = Array.from(this.tanks.values()).filter(t => t.team === team).length;
-            const botsNeeded = CONFIG.MAX_TEAM_SIZE - teamCount;
+        // Don't add automatic bots - respect lobby configuration
+        // Players can add bots manually in the lobby
 
-            for (let i = 0; i < botsNeeded; i++) {
-                const botId = `bot_${team}_${i}`;
-                const spawnPos = this.findSafeSpawn(team);
-                const bot = {
-                    id: botId,
-                    x: spawnPos.x,
-                    y: spawnPos.y,
-                    rotation: Math.random() * 360,
-                    color: TEAM_COLORS[team],
-                    team: team,
-                    number: tankNumber++,
-                    health: CONFIG.MAX_HEALTH,
-                    score: 0,
-                    deaths: 0,
-                    lastShot: 0,
-                    isPlayer: false,
-                    isBot: true,
-                    name: `Bot ${i + 1}`,
-                    respawning: false,
-                    respawnTimer: 0,
-                    respawnTime: 0
-                };
-                this.tanks.set(bot.id, bot);
-            }
-        }
+        // Automatic bot filling is now disabled
+        // Players manually add bots in the lobby for full control
     }
 
     /**

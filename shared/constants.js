@@ -16,13 +16,13 @@
         ROTATION_SPEED: 2,
         NUM_OBSTACLES: 6, // Fixed for multiplayer consistency
         TICK_RATE: 16, // Client render rate
-        SERVER_TICK_RATE: 60, // Server update rate (ms)
+        SERVER_TICK_RATE: 30, // Server update rate (ms) - faster updates
         MAX_TEAM_SIZE: 3,
         BASE_RESPAWN_TIME: 1000,
         RESPAWN_INCREMENT: 2000,
         MAX_RESPAWN_TIME: 20000,
-        INTERPOLATION_DELAY: 100, // ms - render 100ms in past
-        SNAPSHOT_RATE: 500, // ms - full snapshot interval
+        INTERPOLATION_DELAY: 50, // ms - reduced for more responsive feel
+        SNAPSHOT_RATE: 1000, // ms - full snapshot interval
     };
 
     // Team colors
