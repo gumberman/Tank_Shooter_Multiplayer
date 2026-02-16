@@ -7,7 +7,7 @@ class NetworkManager {
         this.socket = null;
         this.serverUrl = window.location.hostname === 'localhost'
             ? 'http://localhost:3001'
-            : 'https://your-app.onrender.com'; // TODO: Replace with actual Render URL
+            : 'https://tank-shooter-multiplayer.onrender.com';
         this.connected = false;
         this.playerId = null;
         this.roomCode = null;
