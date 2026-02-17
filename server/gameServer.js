@@ -365,11 +365,14 @@ class GameServer {
             // Check tank collision (use bullet's own radius)
             const bulletHitRadius = (bullet.radius || CONFIG.BULLET_RADIUS);
             for (const tank of this.tanks.values()) {
-                if (tank.id === bullet.ownerId || tank.team === bullet.team || tank.respawning) continue;
+                if (tank.id === bullet.ownerId || tank.respawning) continue;
 
                 const dist = Math.hypot(tank.x - bullet.x, tank.y - bullet.y);
                 if (dist < CONFIG.TANK_SIZE / 2 + bulletHitRadius) {
-                    this.handleBulletHit(bullet, tank);
+                    // Friendly tanks block the bullet but take no damage
+                    if (tank.team !== bullet.team) {
+                        this.handleBulletHit(bullet, tank);
+                    }
                     bulletsToRemove.push(i);
                     hit = true;
                     break;
