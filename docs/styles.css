@@ -114,6 +114,26 @@ body {
     background: #ff4444;
 }
 
+#active-powerups {
+    position: absolute;
+    top: 80px;
+    left: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+}
+
+.powerup-active {
+    background: rgba(0, 0, 0, 0.75);
+    border: 2px solid;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
 #scoreboard {
     position: absolute;
     top: 80px;

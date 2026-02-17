@@ -11,6 +11,38 @@ class AIController {
     }
 
     /**
+     * Shortest wrapped distance between two points on toroidal map
+     */
+    wrappedDist(x1, y1, x2, y2) {
+        let dx = Math.abs(x2 - x1);
+        let dy = Math.abs(y2 - y1);
+        if (dx > CONFIG.CANVAS_WIDTH / 2) dx = CONFIG.CANVAS_WIDTH - dx;
+        if (dy > CONFIG.CANVAS_HEIGHT / 2) dy = CONFIG.CANVAS_HEIGHT - dy;
+        return Math.hypot(dx, dy);
+    }
+
+    /**
+     * Angle toward target using shortest wrapped path
+     */
+    wrappedAngle(fromX, fromY, toX, toY) {
+        let dx = toX - fromX;
+        let dy = toY - fromY;
+        // Take shortest path through map wrapping
+        if (dx > CONFIG.CANVAS_WIDTH / 2) dx -= CONFIG.CANVAS_WIDTH;
+        if (dx < -CONFIG.CANVAS_WIDTH / 2) dx += CONFIG.CANVAS_WIDTH;
+        if (dy > CONFIG.CANVAS_HEIGHT / 2) dy -= CONFIG.CANVAS_HEIGHT;
+        if (dy < -CONFIG.CANVAS_HEIGHT / 2) dy += CONFIG.CANVAS_HEIGHT;
+        return Math.atan2(dy, dx) * 180 / Math.PI;
+    }
+
+    /**
+     * Direct (non-wrapped) distance between two points
+     */
+    directDist(x1, y1, x2, y2) {
+        return Math.hypot(x2 - x1, y2 - y1);
+    }
+
+    /**
      * Get input for a bot
      * @param {object} bot - The bot tank
      * @param {array} allTanks - All tanks in game
@@ -27,7 +59,7 @@ class AIController {
             space: false
         };
 
-        // Find nearest enemy
+        // Find nearest enemy (wrapping-aware)
         const nearestEnemy = this.findNearestEnemy(bot, allTanks);
 
         if (!nearestEnemy) {
@@ -36,12 +68,8 @@ class AIController {
             return input;
         }
 
-        // Calculate angle to enemy
-        const angleToEnemy = Math.atan2(
-            nearestEnemy.y - bot.y,
-            nearestEnemy.x - bot.x
-        ) * 180 / Math.PI;
-
+        // Navigate using shortest wrapped path angle
+        const angleToEnemy = this.wrappedAngle(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
         const angleDiff = angleDifference(bot.rotation, angleToEnemy);
 
         // Rotate toward enemy
@@ -58,10 +86,10 @@ class AIController {
             input.w = true;
         }
 
-        // Shoot if facing enemy closely
-        const distToEnemy = Math.hypot(nearestEnemy.x - bot.x, nearestEnemy.y - bot.y);
-        if (Math.abs(angleDiff) < 30 && distToEnemy < 800) {
-            // Check if clear shot (no obstacles in the way)
+        // Shoot only if enemy is reachable via direct path (bullets don't wrap)
+        const directDist = this.directDist(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
+        if (Math.abs(angleDiff) < 30 && directDist < 900) {
+            // Check if clear shot on direct path
             if (this.hasClearShot(bot, nearestEnemy, obstacles)) {
                 input.space = true;
             }
@@ -83,7 +111,7 @@ class AIController {
     }
 
     /**
-     * Find nearest enemy tank
+     * Find nearest enemy tank (wrapping-aware distance)
      */
     findNearestEnemy(bot, allTanks) {
         let nearest = null;
@@ -94,7 +122,7 @@ class AIController {
                 continue;
             }
 
-            const dist = Math.hypot(tank.x - bot.x, tank.y - bot.y);
+            const dist = this.wrappedDist(bot.x, bot.y, tank.x, tank.y);
             if (dist < minDist) {
                 minDist = dist;
                 nearest = tank;
@@ -105,7 +133,7 @@ class AIController {
     }
 
     /**
-     * Check if bot has clear shot to target
+     * Check if bot has clear shot to target (direct path, no wrapping - bullets don't wrap)
      */
     hasClearShot(bot, target, obstacles) {
         const dx = target.x - bot.x;

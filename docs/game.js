@@ -815,6 +815,7 @@ class Game {
         this.bullets = [];
         this.particles = [];
         this.obstacles = [];
+        this.powerups = [];
         this.playerTank = null;
         this.gameMode = null; // 'practice', 'multiplayer'
         this.gameRunning = false;
@@ -1102,6 +1103,7 @@ class Game {
         this.tanks = [];
         this.bullets = [];
         this.particles = [];
+        this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear();
 
@@ -1138,14 +1140,19 @@ class Game {
             this.obstacles = state.obstacles;
         }
 
-        // Update bullets directly from server
+        // Update bullets directly from server (preserve radius for large projectile powerup)
         this.bullets = state.bullets.map(b => ({
             x: b.x,
             y: b.y,
             id: b.id,
             team: b.team,
-            radius: CONFIG.BULLET_RADIUS
+            radius: b.radius || CONFIG.BULLET_RADIUS
         }));
+
+        // Update power-ups from server
+        if (state.powerups !== undefined) {
+            this.powerups = state.powerups;
+        }
 
         // Apply all tank states directly from server (no prediction/reconciliation)
         for (const serverTank of state.tanks) {
@@ -1160,6 +1167,7 @@ class Game {
                     this.playerTank.deaths = serverTank.deaths;
                     this.playerTank.respawning = serverTank.respawning;
                     this.playerTank.respawnTimer = serverTank.respawnTimer;
+                    this.playerTank.activePowerups = serverTank.activePowerups || [];
                 }
             } else {
                 // Update or create remote tank
@@ -1183,6 +1191,7 @@ class Game {
                 tank.deaths = serverTank.deaths;
                 tank.respawning = serverTank.respawning;
                 tank.respawnTimer = serverTank.respawnTimer;
+                tank.activePowerups = serverTank.activePowerups || [];
             }
         }
 
@@ -1347,6 +1356,7 @@ class Game {
         this.tanks = [];
         this.bullets = [];
         this.particles = [];
+        this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear(); // Reset used numbers
         this.generateObstacles(Math.random());
@@ -2188,6 +2198,13 @@ class Game {
             particle.draw(this.ctx);
         }
 
+        // Draw power-ups
+        if (this.powerups) {
+            for (const pu of this.powerups) {
+                this.drawPowerup(pu);
+            }
+        }
+
         // Draw bullets
         for (let bullet of this.bullets) {
             if (typeof bullet.draw === 'function') {
@@ -2245,6 +2262,57 @@ class Game {
         this.ctx.lineWidth = 4;
         this.ctx.strokeText(deathMsg, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 250);
         this.ctx.fillText(deathMsg, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 250);
+    }
+
+    drawPowerup(pu) {
+        const now = Date.now();
+        const pulse = 0.65 + Math.sin(now / 280) * 0.35;
+        const r = CONFIG.POWERUP_RADIUS || 40;
+
+        const cfg = {
+            FASTER_RELOAD: { color: '#ffdd00', ring: '#ffe066', label: 'R' },
+            SPEED_BOOST:   { color: '#00aaff', ring: '#66ccff', label: 'S' },
+            LARGE_PROJECTILE: { color: '#ff6600', ring: '#ff9944', label: 'L' }
+        };
+        const style = cfg[pu.type] || { color: '#ffffff', ring: '#cccccc', label: '?' };
+
+        this.ctx.save();
+
+        // Outer pulsing glow ring
+        this.ctx.globalAlpha = pulse * 0.5;
+        this.ctx.fillStyle = style.ring;
+        this.ctx.shadowBlur = 30;
+        this.ctx.shadowColor = style.ring;
+        this.ctx.beginPath();
+        this.ctx.arc(pu.x, pu.y, r * 1.5, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Main circle
+        this.ctx.globalAlpha = 0.9;
+        this.ctx.shadowBlur = 15;
+        this.ctx.shadowColor = style.color;
+        this.ctx.fillStyle = style.color;
+        this.ctx.beginPath();
+        this.ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // Border
+        this.ctx.globalAlpha = 1;
+        this.ctx.shadowBlur = 0;
+        this.ctx.strokeStyle = '#fff';
+        this.ctx.lineWidth = 4;
+        this.ctx.beginPath();
+        this.ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
+        this.ctx.stroke();
+
+        // Label letter
+        this.ctx.fillStyle = '#000';
+        this.ctx.font = `bold ${Math.round(r * 1.1)}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(style.label, pu.x, pu.y);
+
+        this.ctx.restore();
     }
 
     drawGrid() {
@@ -2342,6 +2410,30 @@ class Game {
             ammoIndicator.className = 'ready';
         } else {
             ammoIndicator.className = 'cooling';
+        }
+
+        // Update active powerup indicators
+        const powerupDisplay = document.getElementById('active-powerups');
+        if (powerupDisplay) {
+            powerupDisplay.innerHTML = '';
+            const now = Date.now();
+            const activePowerups = (this.playerTank && this.playerTank.activePowerups) || [];
+            const puLabels = {
+                FASTER_RELOAD: { label: 'Fast Reload', color: '#ffdd00' },
+                SPEED_BOOST:   { label: 'Speed Boost', color: '#00aaff' },
+                LARGE_PROJECTILE: { label: 'Big Shots', color: '#ff6600' }
+            };
+            for (const pu of activePowerups) {
+                if (pu.expiresAt <= now) continue;
+                const info = puLabels[pu.type] || { label: pu.type, color: '#fff' };
+                const remaining = Math.ceil((pu.expiresAt - now) / 1000);
+                const el = document.createElement('div');
+                el.className = 'powerup-active';
+                el.style.color = info.color;
+                el.style.borderColor = info.color;
+                el.textContent = `${info.label} ${remaining}s`;
+                powerupDisplay.appendChild(el);
+            }
         }
 
         // Update scoreboard - show by teams

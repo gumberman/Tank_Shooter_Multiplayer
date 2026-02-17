@@ -23,6 +23,16 @@
         MAX_RESPAWN_TIME: 20000,
         INTERPOLATION_DELAY: 50, // ms - reduced for more responsive feel
         SNAPSHOT_RATE: 1000, // ms - full snapshot interval
+        // Power-up settings
+        POWERUP_RADIUS: 40,
+        POWERUP_DURATION: 8000,       // 8 seconds
+        POWERUP_MIN_SPAWN: 3000,      // 3 seconds min between spawns
+        POWERUP_MAX_SPAWN: 10000,     // 10 seconds max between spawns
+        POWERUP_MAX_COUNT: 3,         // Max powerups on map at once
+        POWERUP_MIN_TANK_DIST: 250,   // Min distance from tanks when spawning
+        FASTER_RELOAD_MULTIPLIER: 0.45, // 45% of normal cooldown
+        SPEED_BOOST_MULTIPLIER: 1.6,    // 160% speed
+        LARGE_PROJECTILE_MULTIPLIER: 2.5, // 2.5x bullet radius
     };
 
     // Team colors
