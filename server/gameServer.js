@@ -93,9 +93,9 @@ class GameServer {
         this.tick++;
         const now = Date.now();
 
-        // Process player inputs
+        // Process player inputs - drain all buffered inputs per tick
         for (const [playerId, inputs] of this.inputBuffers.entries()) {
-            if (inputs.length > 0) {
+            while (inputs.length > 0) {
                 const input = inputs.shift();
                 this.processInput(playerId, input);
             }
@@ -160,12 +160,27 @@ class GameServer {
     }
 
     /**
-     * Move tank forward or backward
+     * Edge speed modifier - matches client physics
+     */
+    getEdgeSpeedModifier(tank) {
+        const edgeThreshold = 200;
+        const minDistX = Math.min(tank.x, CONFIG.CANVAS_WIDTH - tank.x);
+        const minDistY = Math.min(tank.y, CONFIG.CANVAS_HEIGHT - tank.y);
+        const minDist = Math.min(minDistX, minDistY);
+        return minDist < edgeThreshold ? 0.75 : 1.0;
+    }
+
+    /**
+     * Move tank forward or backward - matches client physics exactly
      */
     moveTank(tank, direction) {
         const rad = tank.rotation * Math.PI / 180;
-        let newX = tank.x + Math.cos(rad) * CONFIG.TANK_SPEED * direction;
-        let newY = tank.y + Math.sin(rad) * CONFIG.TANK_SPEED * direction;
+        const speedModifier = this.getEdgeSpeedModifier(tank);
+        const speed = direction === 1
+            ? CONFIG.TANK_SPEED * speedModifier
+            : CONFIG.TANK_SPEED * 0.65 * speedModifier;
+        let newX = tank.x + Math.cos(rad) * speed * direction;
+        let newY = tank.y + Math.sin(rad) * speed * direction;
 
         // Wraparound at edges
         newX = wrapPosition(newX, CONFIG.CANVAS_WIDTH);

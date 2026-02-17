@@ -1131,37 +1131,14 @@ class Game {
     }
 
     handleGameState(state) {
-        this.lastServerUpdate = state.timestamp;
         this.teamScores = state.teamScores;
 
-        // Update server tank states
-        for (const serverTank of state.tanks) {
-            this.serverTanks.set(serverTank.id, serverTank);
-
-            // Update interpolation buffer for remote players
-            if (serverTank.id !== this.playerId) {
-                if (!this.interpolationBuffers.has(serverTank.id)) {
-                    this.interpolationBuffers.set(serverTank.id, []);
-                }
-                const buffer = this.interpolationBuffers.get(serverTank.id);
-                buffer.push({
-                    ...serverTank,
-                    timestamp: state.timestamp
-                });
-
-                // Keep only last 3 snapshots
-                if (buffer.length > 3) {
-                    buffer.shift();
-                }
-            }
+        // Update obstacles if full snapshot
+        if (state.fullSnapshot && state.obstacles) {
+            this.obstacles = state.obstacles;
         }
 
-        // Reconcile player tank with server
-        if (this.playerTank) {
-            this.reconcilePlayerTank();
-        }
-
-        // Update bullets (server authoritative)
+        // Update bullets directly from server
         this.bullets = state.bullets.map(b => ({
             x: b.x,
             y: b.y,
@@ -1170,12 +1147,49 @@ class Game {
             radius: CONFIG.BULLET_RADIUS
         }));
 
-        // Update obstacles if full snapshot
-        if (state.fullSnapshot && state.obstacles) {
-            this.obstacles = state.obstacles;
+        // Apply all tank states directly from server (no prediction/reconciliation)
+        for (const serverTank of state.tanks) {
+            if (serverTank.id === this.playerId) {
+                // Update player's own tank from server
+                if (this.playerTank) {
+                    this.playerTank.x = serverTank.x;
+                    this.playerTank.y = serverTank.y;
+                    this.playerTank.rotation = serverTank.rotation;
+                    this.playerTank.health = serverTank.health;
+                    this.playerTank.score = serverTank.score;
+                    this.playerTank.deaths = serverTank.deaths;
+                    this.playerTank.respawning = serverTank.respawning;
+                    this.playerTank.respawnTimer = serverTank.respawnTimer;
+                }
+            } else {
+                // Update or create remote tank
+                let tank = this.tanks.find(t => t.id === serverTank.id);
+                if (!tank) {
+                    tank = new Tank(
+                        serverTank.x, serverTank.y,
+                        TEAM_COLORS[serverTank.team],
+                        serverTank.id, false,
+                        serverTank.team, serverTank.number || 1
+                    );
+                    tank.name = serverTank.name;
+                    tank.isBot = serverTank.isBot || false;
+                    this.tanks.push(tank);
+                }
+                tank.x = serverTank.x;
+                tank.y = serverTank.y;
+                tank.rotation = serverTank.rotation;
+                tank.health = serverTank.health;
+                tank.score = serverTank.score;
+                tank.deaths = serverTank.deaths;
+                tank.respawning = serverTank.respawning;
+                tank.respawnTimer = serverTank.respawnTimer;
+            }
         }
 
-        // Update UI
+        // Remove tanks no longer in server state
+        const serverTankIds = new Set(state.tanks.map(t => t.id));
+        this.tanks = this.tanks.filter(t => serverTankIds.has(t.id));
+
         this.updateUI();
     }
 
@@ -1541,11 +1555,9 @@ class Game {
             space: this.keys[' '] || this.keys['Space'] || false
         };
 
-        // In multiplayer mode, send input to server and apply locally (client prediction)
+        // In multiplayer mode, send input to server only — no local prediction
         if (this.gameMode === 'multiplayer' && this.networkManager) {
             this.networkManager.sendInput(input);
-            // Still apply input locally for responsive controls
-            this.applyInput(input);
         }
         // In practice mode, apply input directly
         else if (this.gameMode === 'practice') {
@@ -2033,10 +2045,9 @@ class Game {
         const dt = now - this.lastUpdate;
 
         if (dt >= CONFIG.TICK_RATE) {
-            // Multiplayer mode: simplified update (server is authoritative)
+            // Multiplayer mode: server is authoritative, client only sends input
             if (this.gameMode === 'multiplayer') {
                 this.handleInput();
-                this.interpolateRemotePlayers();
 
                 // Update particles only
                 for (let i = this.particles.length - 1; i >= 0; i--) {

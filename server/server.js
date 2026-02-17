@@ -2,19 +2,23 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const path = require('path');
 const RoomManager = require('./roomManager');
 
 const app = express();
 const httpServer = http.createServer(app);
 
-// CORS configuration
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
+// Serve client files from the docs directory
+app.use(express.static(path.join(__dirname, '../docs')));
+
+// CORS configuration (still useful for external clients)
+const CLIENT_URL = process.env.CLIENT_URL || '*';
 app.use(cors({ origin: CLIENT_URL }));
 
 // Socket.io setup
 const io = new Server(httpServer, {
     cors: {
-        origin: CLIENT_URL,
+        origin: '*',
         methods: ['GET', 'POST']
     }
 });

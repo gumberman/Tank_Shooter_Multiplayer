@@ -5,9 +5,7 @@
 class NetworkManager {
     constructor() {
         this.socket = null;
-        this.serverUrl = window.location.hostname === 'localhost'
-            ? 'http://localhost:3001'
-            : 'https://tank-shooter-multiplayer.onrender.com';
+        this.serverUrl = window.location.origin;
         this.connected = false;
         this.playerId = null;
         this.roomCode = null;
