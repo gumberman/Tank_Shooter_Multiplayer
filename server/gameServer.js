@@ -290,9 +290,12 @@ class GameServer {
             bullet.x += bullet.vx;
             bullet.y += bullet.vy;
 
-            // Wraparound
-            bullet.x = wrapPosition(bullet.x, CONFIG.CANVAS_WIDTH);
-            bullet.y = wrapPosition(bullet.y, CONFIG.CANVAS_HEIGHT);
+            // Remove bullets that leave the map
+            if (bullet.x < 0 || bullet.x > CONFIG.CANVAS_WIDTH ||
+                bullet.y < 0 || bullet.y > CONFIG.CANVAS_HEIGHT) {
+                bulletsToRemove.push(i);
+                continue;
+            }
 
             // Check obstacle collision
             let hit = false;
@@ -378,18 +381,14 @@ class GameServer {
     }
 
     /**
-     * Find safe spawn position
+     * Find safe spawn position anywhere on the map
      */
     findSafeSpawn(team) {
-        const centerX = CONFIG.CANVAS_WIDTH / 2;
-        const centerY = CONFIG.CANVAS_HEIGHT / 2;
-        const spawnRadius = 300;
+        const margin = CONFIG.TANK_SIZE * 2;
 
-        for (let attempt = 0; attempt < 50; attempt++) {
-            const angle = Math.random() * Math.PI * 2;
-            const radius = Math.random() * spawnRadius;
-            const x = centerX + Math.cos(angle) * radius;
-            const y = centerY + Math.sin(angle) * radius;
+        for (let attempt = 0; attempt < 100; attempt++) {
+            const x = margin + Math.random() * (CONFIG.CANVAS_WIDTH - margin * 2);
+            const y = margin + Math.random() * (CONFIG.CANVAS_HEIGHT - margin * 2);
 
             if (this.canMoveTo(x, y, null)) {
                 return { x, y };
@@ -397,7 +396,7 @@ class GameServer {
         }
 
         // Fallback to center
-        return { x: centerX, y: centerY };
+        return { x: CONFIG.CANVAS_WIDTH / 2, y: CONFIG.CANVAS_HEIGHT / 2 };
     }
 
     /**
