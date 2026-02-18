@@ -30,56 +30,133 @@
         <canvas id="gameCanvas" width="2400" height="2400"></canvas>
 
         <div id="menu-overlay" class="active">
-            <div id="menu">
-                <h1>Tank Brawl</h1>
-                <p class="subtitle">2D Multiplayer Tank Shooter</p>
+            <div id="menu-layout">
 
-                <div id="menu-content">
-                    <div id="main-menu">
-                        <button id="create-game-btn" class="menu-btn primary">Create Game</button>
-                        <button id="join-game-btn" class="menu-btn">Join Game</button>
-                        <button id="practice-btn" class="menu-btn">Practice Mode</button>
-                    </div>
+                <div id="menu">
+                    <h1>Tank Brawl</h1>
+                    <p class="subtitle">2D Multiplayer Tank Shooter</p>
 
-                    <div id="join-menu" style="display: none;">
-                        <input type="text" id="room-code-input" placeholder="Enter Room Code">
-                        <button id="join-room-btn" class="menu-btn primary">Join Room</button>
-                        <button id="back-btn" class="menu-btn">Back</button>
-                    </div>
-
-                    <div id="lobby" style="display: none;">
-                        <h2>Room Code: <span id="room-code"></span></h2>
-                        <p class="info">Share this code with friends!</p>
-
-                        <div style="margin: 20px 0;">
-                            <p style="margin-bottom: 10px;"><strong>Choose Your Team:</strong></p>
-                            <div style="display: flex; gap: 10px; justify-content: center;">
-                                <button id="join-green-btn" class="menu-btn" style="background: #00aa00;">Join Green Team</button>
-                                <button id="join-red-btn" class="menu-btn" style="background: #aa0000;">Join Red Team</button>
-                            </div>
+                    <div id="menu-content">
+                        <div id="main-menu">
+                            <button id="create-game-btn" class="menu-btn primary">Create Game</button>
+                            <button id="join-game-btn" class="menu-btn">Join Game</button>
+                            <button id="practice-btn" class="menu-btn">Practice Mode</button>
                         </div>
 
-                        <div style="margin: 20px 0;">
-                            <p style="margin-bottom: 10px;"><strong>Add Bots:</strong></p>
-                            <div style="display: flex; gap: 10px; justify-content: center;">
-                                <button id="add-green-bot-btn" class="menu-btn" style="background: #00aa00; font-size: 0.9em;">+ Green Bot</button>
-                                <button id="add-red-bot-btn" class="menu-btn" style="background: #aa0000; font-size: 0.9em;">+ Red Bot</button>
-                            </div>
+                        <div id="join-menu" style="display: none;">
+                            <input type="text" id="room-code-input" placeholder="Enter Room Code">
+                            <button id="join-room-btn" class="menu-btn primary">Join Room</button>
+                            <button id="back-btn" class="menu-btn">Back</button>
                         </div>
 
-                        <div id="lobby-players"></div>
-                        <button id="start-game-btn" class="menu-btn primary">Start Game</button>
-                        <button id="leave-btn" class="menu-btn">Leave</button>
+                        <div id="lobby" style="display: none;">
+                            <h2>Room Code: <span id="room-code"></span></h2>
+                            <p class="info">Share this code with friends!</p>
+
+                            <div style="margin: 20px 0;">
+                                <p style="margin-bottom: 10px;"><strong>Choose Your Team:</strong></p>
+                                <div style="display: flex; gap: 10px; justify-content: center;">
+                                    <button id="join-green-btn" class="menu-btn" style="background: #00aa00;">Join Green Team</button>
+                                    <button id="join-red-btn" class="menu-btn" style="background: #aa0000;">Join Red Team</button>
+                                </div>
+                            </div>
+
+                            <div style="margin: 20px 0;">
+                                <p style="margin-bottom: 10px;"><strong>Add Bots:</strong></p>
+                                <div style="display: flex; gap: 10px; justify-content: center;">
+                                    <button id="add-green-bot-btn" class="menu-btn" style="background: #00aa00; font-size: 0.9em;">+ Green Bot</button>
+                                    <button id="add-red-bot-btn" class="menu-btn" style="background: #aa0000; font-size: 0.9em;">+ Red Bot</button>
+                                </div>
+                            </div>
+
+                            <div id="lobby-players"></div>
+                            <button id="start-game-btn" class="menu-btn primary">Start Game</button>
+                            <button id="leave-btn" class="menu-btn">Leave</button>
+                        </div>
                     </div>
                 </div>
 
-                <div id="controls-info">
-                    <h3>Controls</h3>
-                    <p><strong>W</strong> - Move Forward | <strong>S</strong> - Move Backward</p>
-                    <p><strong>A</strong> - Turn Left | <strong>D</strong> - Turn Right</p>
-                    <p><strong>SPACE</strong> - Shoot</p>
-                </div>
-            </div>
+                <!-- Floating info panel to the right of the main menu -->
+                <div id="info-panel">
+
+                    <div class="info-section">
+                        <h3 class="info-heading">Controls</h3>
+                        <div class="wasd-cluster">
+                            <div class="wasd-top-row">
+                                <span class="kbd">W</span>
+                            </div>
+                            <div class="wasd-bot-row">
+                                <span class="kbd">A</span>
+                                <span class="kbd">S</span>
+                                <span class="kbd">D</span>
+                            </div>
+                        </div>
+                        <p class="ctrl-label">Move &amp; Turn</p>
+                        <div class="space-row">
+                            <span class="kbd kbd-space">SPACE</span>
+                            <span class="ctrl-label" style="margin:0">Shoot</span>
+                        </div>
+                    </div>
+
+                    <div class="info-section">
+                        <h3 class="info-heading">How to Play</h3>
+                        <ul class="tips-list">
+                            <li>First team to <strong>24 kills</strong> wins</li>
+                            <li>You <strong>respawn</strong> after each death — with a longer delay each time (up to 10 s)</li>
+                            <li><strong>No friendly fire</strong> — shoot freely near teammates</li>
+                            <li>Pick up glowing orbs for <strong>temporary power-ups</strong></li>
+                        </ul>
+                    </div>
+
+                    <div class="info-section">
+                        <h3 class="info-heading">Power-Ups</h3>
+
+                        <div class="pu-row">
+                            <div class="pu-icon" style="background:#ffdd00">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+                                    <path d="M4.24,9.19 A7,7,0,0,1,17.76,9.19" stroke="rgba(0,0,0,0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+                                    <polygon points="17.76,9.19 18.56,6.38 15.66,7.16" fill="rgba(0,0,0,0.75)"/>
+                                    <path d="M17.76,12.81 A7,7,0,0,1,4.24,12.81" stroke="rgba(0,0,0,0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+                                    <polygon points="4.24,12.81 3.44,15.62 6.34,14.84" fill="rgba(0,0,0,0.75)"/>
+                                </svg>
+                            </div>
+                            <div class="pu-text">
+                                <strong>Fast Reload</strong>
+                                <span>Fire over 2× faster for 8 s</span>
+                            </div>
+                        </div>
+
+                        <div class="pu-row">
+                            <div class="pu-icon" style="background:#00aaff">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+                                    <polygon points="7,5 21,5 15,17 1,17" fill="rgba(0,0,0,0.75)"/>
+                                </svg>
+                            </div>
+                            <div class="pu-text">
+                                <strong>Speed Boost</strong>
+                                <span>Move &amp; turn 60% faster for 8 s</span>
+                            </div>
+                        </div>
+
+                        <div class="pu-row">
+                            <div class="pu-icon" style="background:#ff6600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" viewBox="0 0 26 14">
+                                    <circle cx="3" cy="7" r="2.2" fill="rgba(0,0,0,0.75)"/>
+                                    <circle cx="13" cy="7" r="3" fill="rgba(0,0,0,0.75)"/>
+                                    <circle cx="23" cy="7" r="4" fill="rgba(0,0,0,0.75)"/>
+                                </svg>
+                            </div>
+                            <div class="pu-text">
+                                <strong>Big Shots</strong>
+                                <span>Double damage — kills in 2 hits for 8 s</span>
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div><!-- /#info-panel -->
+
+            </div><!-- /#menu-layout -->
         </div>
 
         <div id="game-over-overlay" style="display: none;">
