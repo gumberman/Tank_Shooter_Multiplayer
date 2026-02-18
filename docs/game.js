@@ -2301,12 +2301,15 @@ class Game {
             if (typeof bullet.draw === 'function') {
                 bullet.draw(this.ctx);
             } else {
+                const rad = bullet.radius || CONFIG.BULLET_RADIUS;
                 if (bullet.team === 1) {
                     if (!team1Path) team1Path = new Path2D();
-                    team1Path.arc(bullet.x, bullet.y, bullet.radius || CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
+                    team1Path.moveTo(bullet.x + rad, bullet.y);
+                    team1Path.arc(bullet.x, bullet.y, rad, 0, Math.PI * 2);
                 } else {
                     if (!team2Path) team2Path = new Path2D();
-                    team2Path.arc(bullet.x, bullet.y, bullet.radius || CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
+                    team2Path.moveTo(bullet.x + rad, bullet.y);
+                    team2Path.arc(bullet.x, bullet.y, rad, 0, Math.PI * 2);
                 }
             }
         }
