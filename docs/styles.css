@@ -330,12 +330,26 @@ body {
     margin-bottom: 14px;
 }
 
+/* ── Key clusters (WASD + arrows side by side) ── */
+.key-clusters {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.keys-or {
+    font-size: 12px;
+    color: #666;
+    padding-bottom: 6px;
+    flex-shrink: 0;
+}
+
 /* ── WASD key cluster ── */
 .wasd-cluster {
     display: inline-flex;
     flex-direction: column;
     gap: 4px;
-    margin-bottom: 6px;
 }
 .wasd-top-row, .wasd-bot-row {
     display: flex;
