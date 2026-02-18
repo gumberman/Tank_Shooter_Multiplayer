@@ -656,22 +656,30 @@ class Tank {
             ctx.shadowBlur = 0;
         }
 
-        // Draw tank body
+        // Draw tank body (rounded corners)
+        const s = CONFIG.TANK_SIZE;
+        const cr = 14;
         ctx.fillStyle = this.color;
-        ctx.fillRect(-CONFIG.TANK_SIZE / 2, -CONFIG.TANK_SIZE / 2, CONFIG.TANK_SIZE, CONFIG.TANK_SIZE);
+        ctx.beginPath();
+        ctx.roundRect(-s / 2, -s / 2, s, s, cr);
+        ctx.fill();
 
         // Draw tank outline (thin yellow for player only)
         if (this.isPlayer) {
             ctx.strokeStyle = '#ffff00';
             ctx.lineWidth = 3;
-            ctx.strokeRect(-CONFIG.TANK_SIZE / 2, -CONFIG.TANK_SIZE / 2, CONFIG.TANK_SIZE, CONFIG.TANK_SIZE);
+            ctx.beginPath();
+            ctx.roundRect(-s / 2, -s / 2, s, s, cr);
+            ctx.stroke();
         }
 
-        // Draw barrel (much bigger and longer) - BEFORE counter-rotation
+        // Draw barrel (thick, with rounded muzzle)
         ctx.fillStyle = '#333';
-        const barrelWidth = 24; // Much thicker
-        const barrelLength = CONFIG.TANK_SIZE * 0.9; // Much longer
-        ctx.fillRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
+        const barrelWidth = 24;
+        const barrelLength = CONFIG.TANK_SIZE * 0.9;
+        ctx.beginPath();
+        ctx.roundRect(0, -barrelWidth / 2, barrelLength, barrelWidth, [0, barrelWidth / 2, barrelWidth / 2, 0]);
+        ctx.fill();
 
         // Draw health indicator
         if (this.health < CONFIG.MAX_HEALTH) {
@@ -834,10 +842,8 @@ class Game {
         this.lastServerUpdate = 0;
         this.isHost = false;
 
-        // Offscreen canvas caches (populated once, reused every frame)
-        this.gridCanvas = null;
-        this.slowZoneCanvas = null;
-        this.obstacleCanvas = null;
+        // Single offscreen canvas for all static scene layers (bg + grid + zones + obstacles)
+        this.staticCanvas = null;
         this.lastUIUpdate = 0;
 
         this.setupEventListeners();
@@ -1131,6 +1137,7 @@ class Game {
         this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear();
+        this.staticCanvas = null; // Invalidate static scene cache for new game
         // Particle tracking
         this.prevBulletPositions = new Map(); // bulletId -> {x, y, team}
         this.prevTankStates = new Map();       // tankId -> {health, respawning}
@@ -1166,7 +1173,7 @@ class Game {
         // Update obstacles if full snapshot
         if (state.fullSnapshot && state.obstacles) {
             this.obstacles = state.obstacles;
-            this.obstacleCanvas = null; // Invalidate cache
+            this.staticCanvas = null; // Invalidate static scene cache
         }
 
         // ---- Particle effects: detect state changes ----
@@ -1450,7 +1457,7 @@ class Game {
         this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear(); // Reset used numbers
-        this.obstacleCanvas = null; // Invalidate obstacle cache for new map
+        this.staticCanvas = null; // Invalidate static scene cache for new map
         this.generateObstacles(Math.random());
 
         // Create player tank on Team 1
@@ -2265,23 +2272,20 @@ class Game {
     }
 
     draw() {
-        // Clear canvas with game background
-        this.ctx.fillStyle = '#2d4a3e';
-        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+        // Blit merged static scene (bg + grid + slow zones + obstacles)
+        this.buildStaticCanvas();
+        this.ctx.drawImage(this.staticCanvas, 0, 0);
 
-        // Draw grid (cached offscreen canvas)
-        this.drawGrid();
-
-        // Draw slow zones (cached offscreen canvas)
-        this.drawSlowZones();
-
-        // Draw obstacles (cached offscreen canvas, invalidated when map changes)
-        this.drawObstacles();
-
-        // Draw particles (behind everything)
-        for (let particle of this.particles) {
-            particle.draw(this.ctx);
+        // Draw particles – inline (no save/restore per particle)
+        const prevAlpha = this.ctx.globalAlpha;
+        for (const p of this.particles) {
+            this.ctx.globalAlpha = p.life;
+            this.ctx.fillStyle = p.color;
+            this.ctx.beginPath();
+            this.ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+            this.ctx.fill();
         }
+        this.ctx.globalAlpha = prevAlpha;
 
         // Draw power-ups
         if (this.powerups) {
@@ -2290,22 +2294,27 @@ class Game {
             }
         }
 
-        // Draw bullets
-        for (let bullet of this.bullets) {
+        // Draw bullets – practice mode instances drawn normally,
+        // multiplayer plain objects batched by team color
+        let team1Path = null, team2Path = null;
+        for (const bullet of this.bullets) {
             if (typeof bullet.draw === 'function') {
-                // Practice mode - Bullet class instance
                 bullet.draw(this.ctx);
             } else {
-                // Multiplayer mode - plain object from server
-                this.ctx.fillStyle = bullet.team === 1 ? '#00ff00' : '#ff0000';
-                this.ctx.beginPath();
-                this.ctx.arc(bullet.x, bullet.y, bullet.radius || CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
-                this.ctx.fill();
+                if (bullet.team === 1) {
+                    if (!team1Path) team1Path = new Path2D();
+                    team1Path.arc(bullet.x, bullet.y, bullet.radius || CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
+                } else {
+                    if (!team2Path) team2Path = new Path2D();
+                    team2Path.arc(bullet.x, bullet.y, bullet.radius || CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
+                }
             }
         }
+        if (team1Path) { this.ctx.fillStyle = '#00ff00'; this.ctx.fill(team1Path); }
+        if (team2Path) { this.ctx.fillStyle = '#ff0000'; this.ctx.fill(team2Path); }
 
         // Draw tanks
-        for (let tank of this.tanks) {
+        for (const tank of this.tanks) {
             if (tank.health > 0 && !tank.respawning) {
                 tank.draw(this.ctx);
             }
@@ -2395,151 +2404,115 @@ class Game {
         this.ctx.fillStyle = 'rgba(0,0,0,0.75)';
         this.ctx.strokeStyle = 'rgba(0,0,0,0.75)';
 
-        if (pu.type === 'FASTER_RELOAD') {
+        if (pu.type === 'LARGE_PROJECTILE') {
             // Three bullet-dots: small, medium, large left→right
-            const sizes  = [r * 0.10, r * 0.14, r * 0.18];
-            const xPos   = [pu.x - r * 0.38, pu.x, pu.x + r * 0.42];
+            const sizes = [r * 0.10, r * 0.14, r * 0.18];
+            const xPos  = [pu.x - r * 0.38, pu.x, pu.x + r * 0.42];
             for (let i = 0; i < 3; i++) {
                 this.ctx.beginPath();
                 this.ctx.arc(xPos[i], pu.y, sizes[i], 0, Math.PI * 2);
                 this.ctx.fill();
             }
 
-        } else if (pu.type === 'LARGE_PROJECTILE') {
-            // Elongated bullet pointing right
-            const bw = r * 1.0;
-            const bh = r * 0.40;
-            const bx = pu.x - bw * 0.25; // slight left offset to center visually
-            this.ctx.save();
-            this.ctx.translate(bx, pu.y);
+        } else if (pu.type === 'FASTER_RELOAD') {
+            // Two curved arrows in a circle (reload / recycle symbol)
+            const ar = r * 0.55;
+            const hs = r * 0.22;
+            const cx = pu.x, cy = pu.y;
+            this.ctx.lineWidth  = r * 0.17;
+            this.ctx.lineCap    = 'round';
+
+            const drawHead = (endAngle) => {
+                const ex = cx + ar * Math.cos(endAngle);
+                const ey = cy + ar * Math.sin(endAngle);
+                const tx = -Math.sin(endAngle); // CW tangent
+                const ty =  Math.cos(endAngle);
+                this.ctx.beginPath();
+                this.ctx.moveTo(ex, ey);
+                this.ctx.lineTo(ex - tx * hs + ty * hs * 0.6, ey - ty * hs - tx * hs * 0.6);
+                this.ctx.lineTo(ex - tx * hs - ty * hs * 0.6, ey - ty * hs + tx * hs * 0.6);
+                this.ctx.closePath();
+                this.ctx.fill();
+            };
+
+            // Arc 1: CW from 195° to 345°
             this.ctx.beginPath();
-            // Flat back (left), round arc
-            this.ctx.arc(-bw * 0.28, 0, bh / 2, Math.PI / 2, 3 * Math.PI / 2);
-            // Top edge to nose
-            this.ctx.lineTo(bw * 0.38, -bh / 2);
-            // Pointed nose
-            this.ctx.lineTo(bw * 0.55, 0);
-            // Bottom edge from nose
-            this.ctx.lineTo(bw * 0.38, bh / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-            this.ctx.restore();
+            this.ctx.arc(cx, cy, ar, 195 * Math.PI / 180, 345 * Math.PI / 180, false);
+            this.ctx.stroke();
+            drawHead(345 * Math.PI / 180);
+
+            // Arc 2: CW from 15° to 165°
+            this.ctx.beginPath();
+            this.ctx.arc(cx, cy, ar, 15 * Math.PI / 180, 165 * Math.PI / 180, false);
+            this.ctx.stroke();
+            drawHead(165 * Math.PI / 180);
 
         } else if (pu.type === 'SPEED_BOOST') {
-            // Boot with speed streaks
-            const s = r * 0.048; // scale unit
+            // Skewed rounded parallelogram – side view of tank tread moving forward
+            const w = r * 1.1;
+            const h = r * 0.52;
             this.ctx.save();
-            this.ctx.translate(pu.x + s * 1.5, pu.y + s * 2.5);
-
-            // Boot shaft (upper vertical part)
-            const sw = s * 3.2;
-            const sh = s * 5.5;
-            const tw = s * 7.0;
-            const th = s * 2.8;
+            this.ctx.translate(pu.x, pu.y);
+            this.ctx.transform(1, 0, -0.7, 1, 0, 0); // skew: top shifts right
             this.ctx.beginPath();
-            this.ctx.rect(-sw / 2, -sh, sw, sh);         // shaft
-            this.ctx.rect(-sw / 2, 0, tw, th);            // toe / foot
-            this.ctx.rect(-sw / 2 - s, th, tw + s, th * 0.45); // sole
+            this.ctx.roundRect(-w / 2, -h / 2, w, h, r * 0.14);
             this.ctx.fill();
-
-            // Speed streaks to the left
-            this.ctx.lineWidth = s * 1.6;
-            this.ctx.lineCap = 'round';
-            const streakX = -sw / 2 - s * 2.0;
-            const streakData = [
-                { y: -sh * 0.72, len: s * 5.5 },
-                { y: -sh * 0.40, len: s * 4.0 },
-                { y: -sh * 0.08, len: s * 2.8 }
-            ];
-            for (const sd of streakData) {
-                this.ctx.beginPath();
-                this.ctx.moveTo(streakX, sd.y);
-                this.ctx.lineTo(streakX - sd.len, sd.y);
-                this.ctx.stroke();
-            }
             this.ctx.restore();
         }
 
         this.ctx.restore();
     }
 
-    drawGrid() {
-        // Build offscreen canvas once, blit every frame
-        if (!this.gridCanvas) {
-            this.gridCanvas = document.createElement('canvas');
-            this.gridCanvas.width  = CONFIG.CANVAS_WIDTH;
-            this.gridCanvas.height = CONFIG.CANVAS_HEIGHT;
-            const gCtx = this.gridCanvas.getContext('2d');
-            gCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-            gCtx.lineWidth = 1;
-            for (let x = 0; x <= CONFIG.CANVAS_WIDTH; x += 50) {
-                gCtx.beginPath();
-                gCtx.moveTo(x, 0);
-                gCtx.lineTo(x, CONFIG.CANVAS_HEIGHT);
-                gCtx.stroke();
-            }
-            for (let y = 0; y <= CONFIG.CANVAS_HEIGHT; y += 50) {
-                gCtx.beginPath();
-                gCtx.moveTo(0, y);
-                gCtx.lineTo(CONFIG.CANVAS_WIDTH, y);
-                gCtx.stroke();
-            }
+    buildStaticCanvas() {
+        // Builds once; set this.staticCanvas = null to force rebuild (e.g. new obstacles)
+        if (this.staticCanvas) return;
+
+        this.staticCanvas = document.createElement('canvas');
+        this.staticCanvas.width  = CONFIG.CANVAS_WIDTH;
+        this.staticCanvas.height = CONFIG.CANVAS_HEIGHT;
+        const sCtx = this.staticCanvas.getContext('2d');
+
+        // Background
+        sCtx.fillStyle = '#2d4a3e';
+        sCtx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+
+        // Grid
+        sCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        sCtx.lineWidth = 1;
+        for (let x = 0; x <= CONFIG.CANVAS_WIDTH; x += 50) {
+            sCtx.beginPath(); sCtx.moveTo(x, 0); sCtx.lineTo(x, CONFIG.CANVAS_HEIGHT); sCtx.stroke();
         }
-        this.ctx.drawImage(this.gridCanvas, 0, 0);
-    }
-
-    drawSlowZones() {
-        // Build offscreen canvas once, blit every frame
-        if (!this.slowZoneCanvas) {
-            const edgeThreshold = 200;
-            this.slowZoneCanvas = document.createElement('canvas');
-            this.slowZoneCanvas.width  = CONFIG.CANVAS_WIDTH;
-            this.slowZoneCanvas.height = CONFIG.CANVAS_HEIGHT;
-            const sCtx = this.slowZoneCanvas.getContext('2d');
-
-            // Diagonal stripe pattern tile
-            const tileCanvas = document.createElement('canvas');
-            tileCanvas.width  = 20;
-            tileCanvas.height = 20;
-            const tCtx = tileCanvas.getContext('2d');
-            tCtx.strokeStyle = 'rgba(139, 69, 19, 0.15)';
-            tCtx.lineWidth = 3;
-            tCtx.beginPath(); tCtx.moveTo(0, 20); tCtx.lineTo(20, 0); tCtx.stroke();
-            tCtx.beginPath(); tCtx.moveTo(0, 0); tCtx.lineTo(10, 0); tCtx.lineTo(0, 10); tCtx.fill();
-
-            const pattern = sCtx.createPattern(tileCanvas, 'repeat');
-            sCtx.fillStyle = pattern;
-            sCtx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
-            sCtx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
-            sCtx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-            sCtx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-
-            sCtx.fillStyle = 'rgba(101, 67, 33, 0.08)';
-            sCtx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
-            sCtx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
-            sCtx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-            sCtx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+        for (let y = 0; y <= CONFIG.CANVAS_HEIGHT; y += 50) {
+            sCtx.beginPath(); sCtx.moveTo(0, y); sCtx.lineTo(CONFIG.CANVAS_WIDTH, y); sCtx.stroke();
         }
-        this.ctx.drawImage(this.slowZoneCanvas, 0, 0);
-    }
 
-    drawObstacles() {
-        // Build offscreen canvas when obstacles change, blit every frame
-        if (!this.obstacleCanvas && this.obstacles.length > 0) {
-            this.obstacleCanvas = document.createElement('canvas');
-            this.obstacleCanvas.width  = CONFIG.CANVAS_WIDTH;
-            this.obstacleCanvas.height = CONFIG.CANVAS_HEIGHT;
-            const oCtx = this.obstacleCanvas.getContext('2d');
-            oCtx.fillStyle   = '#1a2e24';
-            oCtx.strokeStyle = 'rgba(13, 23, 18, 0.5)';
-            oCtx.lineWidth   = 1;
-            for (const obs of this.obstacles) {
-                oCtx.fillRect(obs.x, obs.y, obs.width, obs.height);
-                oCtx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-            }
-        }
-        if (this.obstacleCanvas) {
-            this.ctx.drawImage(this.obstacleCanvas, 0, 0);
+        // Slow-zone edge hatching
+        const edgeThreshold = 200;
+        const tileCanvas = document.createElement('canvas');
+        tileCanvas.width = 20; tileCanvas.height = 20;
+        const tCtx = tileCanvas.getContext('2d');
+        tCtx.strokeStyle = 'rgba(139, 69, 19, 0.15)'; tCtx.lineWidth = 3;
+        tCtx.beginPath(); tCtx.moveTo(0, 20); tCtx.lineTo(20, 0); tCtx.stroke();
+        tCtx.beginPath(); tCtx.moveTo(0, 0); tCtx.lineTo(10, 0); tCtx.lineTo(0, 10); tCtx.fill();
+        const pattern = sCtx.createPattern(tileCanvas, 'repeat');
+        const edgeRects = [
+            [0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold],
+            [0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold],
+            [0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2],
+            [CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2]
+        ];
+        sCtx.fillStyle = pattern;
+        for (const [x, y, w, h] of edgeRects) sCtx.fillRect(x, y, w, h);
+        sCtx.fillStyle = 'rgba(101, 67, 33, 0.08)';
+        for (const [x, y, w, h] of edgeRects) sCtx.fillRect(x, y, w, h);
+
+        // Obstacles
+        sCtx.fillStyle   = '#1a2e24';
+        sCtx.strokeStyle = 'rgba(13, 23, 18, 0.5)';
+        sCtx.lineWidth   = 1;
+        for (const obs of this.obstacles) {
+            sCtx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            sCtx.strokeRect(obs.x, obs.y, obs.width, obs.height);
         }
     }
 
@@ -2575,15 +2548,15 @@ class Game {
             const puInfo = {
                 FASTER_RELOAD: {
                     label: 'Fast Reload', color: '#ffdd00',
-                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" style="vertical-align:middle;margin-right:5px"><circle cx="3" cy="7" r="2.2" fill="currentColor"/><circle cx="13" cy="7" r="3" fill="currentColor"/><circle cx="23" cy="7" r="4" fill="currentColor"/></svg>`
+                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" style="vertical-align:middle;margin-right:5px"><path d="M4.24,9.19 A7,7,0,0,1,17.76,9.19" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><polygon points="17.76,9.19 18.56,6.38 15.66,7.16" fill="currentColor"/><path d="M17.76,12.81 A7,7,0,0,1,4.24,12.81" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><polygon points="4.24,12.81 3.44,15.62 6.34,14.84" fill="currentColor"/></svg>`
                 },
                 SPEED_BOOST: {
                     label: 'Speed Boost', color: '#00aaff',
-                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="20" style="vertical-align:middle;margin-right:5px"><rect x="14" y="1" width="5" height="10" fill="currentColor"/><rect x="14" y="10" width="10" height="5" fill="currentColor"/><rect x="13" y="14" width="12" height="3" fill="currentColor"/><line x1="12" y1="3" x2="2" y2="3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="12" y1="7" x2="4" y2="7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="12" y1="11" x2="7" y2="11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`
+                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" style="vertical-align:middle;margin-right:5px"><polygon points="7,5 21,5 15,17 1,17" fill="currentColor"/></svg>`
                 },
                 LARGE_PROJECTILE: {
                     label: 'Big Shots', color: '#ff6600',
-                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" style="vertical-align:middle;margin-right:5px"><path d="M2,7 a4,4 0 0,1 4,-4 L18,3 L24,7 L18,11 L6,11 a4,4 0 0,1 -4,-4 Z" fill="currentColor"/></svg>`
+                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" viewBox="0 0 26 14" style="vertical-align:middle;margin-right:5px"><circle cx="3" cy="7" r="2.2" fill="currentColor"/><circle cx="13" cy="7" r="3" fill="currentColor"/><circle cx="23" cy="7" r="4" fill="currentColor"/></svg>`
                 }
             };
             for (const pu of activePowerups) {
@@ -2772,15 +2745,17 @@ class Game {
     }
 
     startGameLoop() {
-        const loop = () => {
+        const TARGET_MS = 1000 / 60; // ~16.67 ms
+        let lastFrameTime = 0;
+        const loop = (timestamp) => {
+            if (!this.gameRunning) return;
+            requestAnimationFrame(loop);
+            if (timestamp - lastFrameTime < TARGET_MS - 1) return; // skip if too soon
+            lastFrameTime = timestamp;
             this.update();
             this.draw();
-
-            if (this.gameRunning) {
-                requestAnimationFrame(loop);
-            }
         };
-        loop();
+        requestAnimationFrame(loop);
     }
 }
 
