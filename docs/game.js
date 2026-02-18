@@ -913,8 +913,8 @@ class Game {
             this.keys[key] = true;
             this.keys[e.key] = true; // Also store original case
 
-            // Prevent space from scrolling
-            if (e.key === ' ' || e.code === 'Space') {
+            // Prevent space and arrow keys from scrolling
+            if (e.key === ' ' || e.code === 'Space' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
             }
         });
@@ -1707,10 +1707,10 @@ class Game {
 
         // Collect input state
         const input = {
-            w: this.keys['w'] || this.keys['W'] || false,
-            a: this.keys['a'] || this.keys['A'] || false,
-            s: this.keys['s'] || this.keys['S'] || false,
-            d: this.keys['d'] || this.keys['D'] || false,
+            w: this.keys['w'] || this.keys['W'] || this.keys['ArrowUp'] || false,
+            a: this.keys['a'] || this.keys['A'] || this.keys['ArrowLeft'] || false,
+            s: this.keys['s'] || this.keys['S'] || this.keys['ArrowDown'] || false,
+            d: this.keys['d'] || this.keys['D'] || this.keys['ArrowRight'] || false,
             space: this.keys[' '] || this.keys['Space'] || false
         };
 
