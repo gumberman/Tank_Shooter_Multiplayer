@@ -186,11 +186,14 @@ io.on('connection', (socket) => {
             if (targetId === socket.id) return; // Cannot remove self
 
             const isBot = targetId.startsWith('lobby_bot_');
-            if (!isBot) {
-                // Notify the kicked player
+            if (isBot) {
+                // Bots are not in playerRooms - remove directly from room
+                room.removeMember(targetId);
+            } else {
+                // Notify the kicked player first, then clean up
                 io.to(targetId).emit('kicked', { message: 'You were removed from the lobby by the host' });
+                roomManager.forceRemoveFromLobby(targetId);
             }
-            roomManager.forceRemoveFromLobby(targetId);
             io.to(room.code).emit('playerLeft', {
                 playerId: targetId,
                 players: room.getPlayerList()

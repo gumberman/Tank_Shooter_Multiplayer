@@ -834,6 +834,12 @@ class Game {
         this.lastServerUpdate = 0;
         this.isHost = false;
 
+        // Offscreen canvas caches (populated once, reused every frame)
+        this.gridCanvas = null;
+        this.slowZoneCanvas = null;
+        this.obstacleCanvas = null;
+        this.lastUIUpdate = 0;
+
         this.setupEventListeners();
     }
 
@@ -1160,6 +1166,7 @@ class Game {
         // Update obstacles if full snapshot
         if (state.fullSnapshot && state.obstacles) {
             this.obstacles = state.obstacles;
+            this.obstacleCanvas = null; // Invalidate cache
         }
 
         // ---- Particle effects: detect state changes ----
@@ -1274,7 +1281,12 @@ class Game {
         const serverTankIds = new Set(state.tanks.map(t => t.id));
         this.tanks = this.tanks.filter(t => serverTankIds.has(t.id));
 
-        this.updateUI();
+        // Throttle DOM updates to ~10fps - game state arrives at 60fps
+        const nowUI = Date.now();
+        if (nowUI - this.lastUIUpdate >= 100) {
+            this.updateUI();
+            this.lastUIUpdate = nowUI;
+        }
     }
 
     reconcilePlayerTank() {
@@ -1438,6 +1450,7 @@ class Game {
         this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear(); // Reset used numbers
+        this.obstacleCanvas = null; // Invalidate obstacle cache for new map
         this.generateObstacles(Math.random());
 
         // Create player tank on Team 1
@@ -2256,21 +2269,14 @@ class Game {
         this.ctx.fillStyle = '#2d4a3e';
         this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
 
-        // Draw grid
+        // Draw grid (cached offscreen canvas)
         this.drawGrid();
 
-        // Draw slow zones (visual indicator for edge slowdown)
+        // Draw slow zones (cached offscreen canvas)
         this.drawSlowZones();
 
-        // Draw obstacles
-        this.ctx.fillStyle = '#1a2e24';
-        for (let obs of this.obstacles) {
-            this.ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-            // Subtle darker edge
-            this.ctx.strokeStyle = 'rgba(13, 23, 18, 0.5)';
-            this.ctx.lineWidth = 1;
-            this.ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-        }
+        // Draw obstacles (cached offscreen canvas, invalidated when map changes)
+        this.drawObstacles();
 
         // Draw particles (behind everything)
         for (let particle of this.particles) {
@@ -2458,77 +2464,83 @@ class Game {
     }
 
     drawGrid() {
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-        this.ctx.lineWidth = 1;
-
-        for (let x = 0; x < CONFIG.CANVAS_WIDTH; x += 50) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, CONFIG.CANVAS_HEIGHT);
-            this.ctx.stroke();
+        // Build offscreen canvas once, blit every frame
+        if (!this.gridCanvas) {
+            this.gridCanvas = document.createElement('canvas');
+            this.gridCanvas.width  = CONFIG.CANVAS_WIDTH;
+            this.gridCanvas.height = CONFIG.CANVAS_HEIGHT;
+            const gCtx = this.gridCanvas.getContext('2d');
+            gCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            gCtx.lineWidth = 1;
+            for (let x = 0; x <= CONFIG.CANVAS_WIDTH; x += 50) {
+                gCtx.beginPath();
+                gCtx.moveTo(x, 0);
+                gCtx.lineTo(x, CONFIG.CANVAS_HEIGHT);
+                gCtx.stroke();
+            }
+            for (let y = 0; y <= CONFIG.CANVAS_HEIGHT; y += 50) {
+                gCtx.beginPath();
+                gCtx.moveTo(0, y);
+                gCtx.lineTo(CONFIG.CANVAS_WIDTH, y);
+                gCtx.stroke();
+            }
         }
-
-        for (let y = 0; y < CONFIG.CANVAS_HEIGHT; y += 50) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(CONFIG.CANVAS_WIDTH, y);
-            this.ctx.stroke();
-        }
+        this.ctx.drawImage(this.gridCanvas, 0, 0);
     }
 
     drawSlowZones() {
-        const edgeThreshold = 200; // Must match the threshold in getEdgeSpeedModifier()
+        // Build offscreen canvas once, blit every frame
+        if (!this.slowZoneCanvas) {
+            const edgeThreshold = 200;
+            this.slowZoneCanvas = document.createElement('canvas');
+            this.slowZoneCanvas.width  = CONFIG.CANVAS_WIDTH;
+            this.slowZoneCanvas.height = CONFIG.CANVAS_HEIGHT;
+            const sCtx = this.slowZoneCanvas.getContext('2d');
 
-        // Draw semi-transparent overlay for slow zones with diagonal stripe pattern
-        this.ctx.save();
+            // Diagonal stripe pattern tile
+            const tileCanvas = document.createElement('canvas');
+            tileCanvas.width  = 20;
+            tileCanvas.height = 20;
+            const tCtx = tileCanvas.getContext('2d');
+            tCtx.strokeStyle = 'rgba(139, 69, 19, 0.15)';
+            tCtx.lineWidth = 3;
+            tCtx.beginPath(); tCtx.moveTo(0, 20); tCtx.lineTo(20, 0); tCtx.stroke();
+            tCtx.beginPath(); tCtx.moveTo(0, 0); tCtx.lineTo(10, 0); tCtx.lineTo(0, 10); tCtx.fill();
 
-        // Create a diagonal stripe pattern
-        const patternCanvas = document.createElement('canvas');
-        patternCanvas.width = 20;
-        patternCanvas.height = 20;
-        const patternCtx = patternCanvas.getContext('2d');
+            const pattern = sCtx.createPattern(tileCanvas, 'repeat');
+            sCtx.fillStyle = pattern;
+            sCtx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
+            sCtx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
+            sCtx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+            sCtx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
 
-        // Draw diagonal stripes
-        patternCtx.strokeStyle = 'rgba(139, 69, 19, 0.15)'; // Brown-ish tint
-        patternCtx.lineWidth = 3;
-        patternCtx.beginPath();
-        patternCtx.moveTo(0, 20);
-        patternCtx.lineTo(20, 0);
-        patternCtx.stroke();
-        patternCtx.beginPath();
-        patternCtx.moveTo(0, 0);
-        patternCtx.lineTo(10, 0);
-        patternCtx.lineTo(0, 10);
-        patternCtx.fill();
+            sCtx.fillStyle = 'rgba(101, 67, 33, 0.08)';
+            sCtx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
+            sCtx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
+            sCtx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+            sCtx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
+        }
+        this.ctx.drawImage(this.slowZoneCanvas, 0, 0);
+    }
 
-        const pattern = this.ctx.createPattern(patternCanvas, 'repeat');
-        this.ctx.fillStyle = pattern;
-
-        // Draw top border
-        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
-
-        // Draw bottom border
-        this.ctx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
-
-        // Draw left border (excluding corners already drawn)
-        this.ctx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-
-        // Draw right border (excluding corners already drawn)
-        this.ctx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-
-        // Add a subtle darker overlay to make it more visible
-        this.ctx.fillStyle = 'rgba(101, 67, 33, 0.08)'; // Muddy brown overlay
-
-        // Top
-        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold);
-        // Bottom
-        this.ctx.fillRect(0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold);
-        // Left
-        this.ctx.fillRect(0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-        // Right
-        this.ctx.fillRect(CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2);
-
-        this.ctx.restore();
+    drawObstacles() {
+        // Build offscreen canvas when obstacles change, blit every frame
+        if (!this.obstacleCanvas && this.obstacles.length > 0) {
+            this.obstacleCanvas = document.createElement('canvas');
+            this.obstacleCanvas.width  = CONFIG.CANVAS_WIDTH;
+            this.obstacleCanvas.height = CONFIG.CANVAS_HEIGHT;
+            const oCtx = this.obstacleCanvas.getContext('2d');
+            oCtx.fillStyle   = '#1a2e24';
+            oCtx.strokeStyle = 'rgba(13, 23, 18, 0.5)';
+            oCtx.lineWidth   = 1;
+            for (const obs of this.obstacles) {
+                oCtx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                oCtx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+            }
+        }
+        if (this.obstacleCanvas) {
+            this.ctx.drawImage(this.obstacleCanvas, 0, 0);
+        }
     }
 
     updateUI() {
