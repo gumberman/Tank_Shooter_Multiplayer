@@ -16,7 +16,7 @@
         ROTATION_SPEED: 1.2,
         NUM_OBSTACLES: 6, // Fixed for multiplayer consistency
         TICK_RATE: 16, // Client render rate
-        SERVER_TICK_RATE: 16, // Server update rate (ms) - matches client render rate
+        SERVER_TICK_RATE: 33, // Server update rate (ms) – ~30fps saves CPU/bandwidth
         MAX_TEAM_SIZE: 3,
         BASE_RESPAWN_TIME: 1000,
         RESPAWN_INCREMENT: 1000,

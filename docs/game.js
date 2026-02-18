@@ -640,9 +640,11 @@ class Tank {
     }
 
     draw(ctx) {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.rotation * Math.PI / 180);
+        // Apply transform without save/restore – use setTransform + resetTransform
+        const rad = this.rotation * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        ctx.setTransform(cos, sin, -sin, cos, this.x, this.y);
 
         // Draw player indicator (glowing ring)
         if (this.isPlayer) {
@@ -686,25 +688,19 @@ class Tank {
             const barWidth = CONFIG.TANK_SIZE;
             const barHeight = 8;
             const healthPercent = this.health / CONFIG.MAX_HEALTH;
-
-            // Draw background (dark)
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(-barWidth / 2, -CONFIG.TANK_SIZE / 2 - 20, barWidth, barHeight);
-
-            // Draw health (red)
             ctx.fillStyle = 'red';
             ctx.fillRect(-barWidth / 2, -CONFIG.TANK_SIZE / 2 - 20, barWidth * healthPercent, barHeight);
         }
 
-        ctx.restore();
+        // Reset to identity for name tag (world coords)
+        ctx.resetTransform();
 
-        // Draw name tag (50% bigger)
         ctx.fillStyle = this.isPlayer ? '#ffff00' : '#fff';
         ctx.font = this.isPlayer ? 'bold 72px Arial' : 'bold 54px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
-        // Stroke for readability
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.lineWidth = 3;
 
@@ -754,10 +750,11 @@ class Bullet {
         }
 
         // Check tank collision - bullets stop on ANY tank (friendly or enemy)
+        const hitThreshSq = (CONFIG.TANK_SIZE / 2 + CONFIG.BULLET_RADIUS) ** 2;
         for (let tank of tanks) {
             if (tank.id !== this.ownerId && tank.health > 0 && !tank.respawning) {
-                const dist = Math.hypot(this.x - tank.x, this.y - tank.y);
-                if (dist < CONFIG.TANK_SIZE / 2 + CONFIG.BULLET_RADIUS) {
+                const dx = this.x - tank.x, dy = this.y - tank.y;
+                if (dx * dx + dy * dy < hitThreshSq) {
                     this.active = false;
                     // Only return tank if it's an enemy (for damage), otherwise return null
                     return tank.team !== shooterTeam ? tank : null;
@@ -787,6 +784,14 @@ class Particle {
         this.life = 1.0; // 0 to 1
         this.decay = 0.015 + Math.random() * 0.02;
         this.gravity = 0.1;
+    }
+
+    reset(x, y, color, vx, vy) {
+        this.x = x; this.y = y; this.color = color;
+        this.vx = vx; this.vy = vy;
+        this.size = 3 + Math.random() * 5;
+        this.life = 1.0;
+        this.decay = 0.015 + Math.random() * 0.02;
     }
 
     update() {
@@ -846,7 +851,39 @@ class Game {
         this.staticCanvas = null;
         this.lastUIUpdate = 0;
 
+        // Particle object pool – reuse instead of allocate/GC
+        this.particlePool = [];
+
+        // O(1) tank lookup by id
+        this.tankMap = new Map();
+
+        // Pre-rendered powerup sprites (per type), avoids redrawing icons every frame
+        this.powerupCache = new Map();
+
+        // DOM diff cache – only update elements when values actually change
+        this._uiCache = { health: -1, scoreText: '', ammoClass: '', puText: '', sbText: '' };
+
+        // Powerup HUD info (built once, not recreated every updateUI call)
+        this._puInfo = {
+            FASTER_RELOAD: {
+                color: '#ffdd00',
+                icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" style="vertical-align:middle;margin-right:5px"><path d="M4.24,9.19 A7,7,0,0,1,17.76,9.19" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><polygon points="17.76,9.19 18.56,6.38 15.66,7.16" fill="currentColor"/><path d="M17.76,12.81 A7,7,0,0,1,4.24,12.81" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><polygon points="4.24,12.81 3.44,15.62 6.34,14.84" fill="currentColor"/></svg>`
+            },
+            SPEED_BOOST: {
+                color: '#00aaff',
+                icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" style="vertical-align:middle;margin-right:5px"><polygon points="7,5 21,5 15,17 1,17" fill="currentColor"/></svg>`
+            },
+            LARGE_PROJECTILE: {
+                color: '#ff6600',
+                icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" viewBox="0 0 26 14" style="vertical-align:middle;margin-right:5px"><circle cx="3" cy="7" r="2.2" fill="currentColor"/><circle cx="13" cy="7" r="3" fill="currentColor"/><circle cx="23" cy="7" r="4" fill="currentColor"/></svg>`
+            }
+        };
+
         this.setupEventListeners();
+    }
+
+    _syncTankMap() {
+        this.tankMap = new Map(this.tanks.map(t => [t.id, t]));
     }
 
     getUniqueTankNumber() {
@@ -1133,10 +1170,12 @@ class Game {
     initMultiplayerGame(players) {
         this.tanks = [];
         this.bullets = [];
+        for (const p of this.particles) this.particlePool.push(p); // return to pool
         this.particles = [];
         this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear();
+        this._uiCache = { health: -1, scoreText: '', ammoClass: '', puText: '', sbText: '' };
         this.staticCanvas = null; // Invalidate static scene cache for new game
         // Particle tracking
         this.prevBulletPositions = new Map(); // bulletId -> {x, y, team}
@@ -1163,6 +1202,7 @@ class Game {
             this.tanks.push(this.playerTank);
         }
 
+        this._syncTankMap();
         this.gameRunning = true;
         this.updateUI();
     }
@@ -1212,7 +1252,7 @@ class Game {
                     const color = TEAM_COLORS[serverTank.team] || '#ffffff';
                     if (!prev.respawning && serverTank.respawning) {
                         // Tank just died → big explosion
-                        const tank = this.tanks.find(t => t.id === serverTank.id);
+                        const tank = this.tankMap.get(serverTank.id);
                         const ex = tank ? tank.x : serverTank.x;
                         const ey = tank ? tank.y : serverTank.y;
                         this.spawnParticles(ex, ey, color, 40);
@@ -1260,7 +1300,7 @@ class Game {
                 }
             } else {
                 // Update or create remote tank
-                let tank = this.tanks.find(t => t.id === serverTank.id);
+                let tank = this.tankMap.get(serverTank.id);
                 if (!tank) {
                     tank = new Tank(
                         serverTank.x, serverTank.y,
@@ -1287,6 +1327,7 @@ class Game {
         // Remove tanks no longer in server state
         const serverTankIds = new Set(state.tanks.map(t => t.id));
         this.tanks = this.tanks.filter(t => serverTankIds.has(t.id));
+        this._syncTankMap();
 
         // Throttle DOM updates to ~10fps - game state arrives at 60fps
         const nowUI = Date.now();
@@ -1369,7 +1410,7 @@ class Game {
             const clampedT = Math.max(0, Math.min(1, t));
 
             // Find or create tank
-            let tank = this.tanks.find(t => t.id === tankId);
+            let tank = this.tankMap.get(tankId);
             if (!tank) {
                 tank = new Tank(
                     older.x,
@@ -1409,6 +1450,7 @@ class Game {
             if (tank.id === this.playerId) return true;
             return serverTankIds.has(tank.id);
         });
+        this._syncTankMap();
     }
 
     handleGameOver(data) {
@@ -1445,18 +1487,25 @@ class Game {
             const angle = Math.random() * Math.PI * 2;
             const speed = 2 + Math.random() * 6;
             const vx = Math.cos(angle) * speed;
-            const vy = Math.sin(angle) * speed - 2; // Slight upward bias
-            this.particles.push(new Particle(x, y, color, vx, vy));
+            const vy = Math.sin(angle) * speed - 2;
+            // Reuse a pooled particle or allocate a new one
+            const p = this.particlePool.length > 0
+                ? this.particlePool.pop()
+                : new Particle(0, 0, '#fff', 0, 0);
+            p.reset(x, y, color, vx, vy);
+            this.particles.push(p);
         }
     }
 
     initGame() {
         this.tanks = [];
         this.bullets = [];
+        for (const p of this.particles) this.particlePool.push(p); // return to pool
         this.particles = [];
         this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear(); // Reset used numbers
+        this._uiCache = { health: -1, scoreText: '', ammoClass: '', puText: '', sbText: '' };
         this.staticCanvas = null; // Invalidate static scene cache for new map
         this.generateObstacles(Math.random());
 
@@ -1571,6 +1620,7 @@ class Game {
             }
         }
 
+        this._syncTankMap();
         this.gameRunning = true;
         this.updateUI();
     }
@@ -2160,9 +2210,12 @@ class Game {
 
                 // Update particles only
                 for (let i = this.particles.length - 1; i >= 0; i--) {
-                    this.particles[i].update();
-                    if (this.particles[i].isDead()) {
-                        this.particles.splice(i, 1);
+                    const p = this.particles[i];
+                    p.update();
+                    if (p.isDead()) {
+                        this.particles[i] = this.particles[this.particles.length - 1];
+                        this.particles.pop();
+                        this.particlePool.push(p);
                     }
                 }
 
@@ -2196,7 +2249,7 @@ class Game {
                     const died = hitTank.takeDamage();
 
                     // Find shooter and award point to team
-                    const shooter = this.tanks.find(t => t.id === bullet.ownerId);
+                    const shooter = this.tankMap.get(bullet.ownerId);
                     if (shooter) {
                         // Track accuracy for AI learning
                         if (!shooter.isPlayer) {
@@ -2239,7 +2292,8 @@ class Game {
                         }
                     }
 
-                    this.bullets.splice(i, 1);
+                    this.bullets[i] = this.bullets[this.bullets.length - 1];
+                    this.bullets.pop();
                 } else if (!bullet.active) {
                     // Check if bullet hit obstacle (for particle effect)
                     if (bullet.x > 0 && bullet.x < CONFIG.CANVAS_WIDTH &&
@@ -2247,15 +2301,19 @@ class Game {
                         // Bullet hit obstacle
                         this.spawnParticles(bullet.x, bullet.y, '#888', 10);
                     }
-                    this.bullets.splice(i, 1);
+                    this.bullets[i] = this.bullets[this.bullets.length - 1];
+                    this.bullets.pop();
                 }
             }
 
             // Update particles
             for (let i = this.particles.length - 1; i >= 0; i--) {
-                this.particles[i].update();
-                if (this.particles[i].isDead()) {
-                    this.particles.splice(i, 1);
+                const p = this.particles[i];
+                p.update();
+                if (p.isDead()) {
+                    this.particles[i] = this.particles[this.particles.length - 1];
+                    this.particles.pop();
+                    this.particlePool.push(p);
                 }
             }
 
@@ -2362,106 +2420,93 @@ class Game {
         this.ctx.fillText(deathMsg, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 250);
     }
 
+    _buildPowerupSprite(type) {
+        // Pre-render circle + border + icon to an offscreen canvas (called once per type)
+        const r = CONFIG.POWERUP_RADIUS || 40;
+        const half = r + 4;
+        const size = half * 2;
+        const cx = half, cy = half;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const c = canvas.getContext('2d');
+
+        const colors = { FASTER_RELOAD: '#ffdd00', SPEED_BOOST: '#00aaff', LARGE_PROJECTILE: '#ff6600' };
+        const color = colors[type] || '#ffffff';
+
+        // Main circle
+        c.globalAlpha = 0.9;
+        c.fillStyle = color;
+        c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
+
+        // Border
+        c.globalAlpha = 1;
+        c.strokeStyle = '#fff'; c.lineWidth = 4;
+        c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.stroke();
+
+        // Icon
+        c.fillStyle = 'rgba(0,0,0,0.75)';
+        c.strokeStyle = 'rgba(0,0,0,0.75)';
+
+        if (type === 'LARGE_PROJECTILE') {
+            const sizes = [r * 0.10, r * 0.14, r * 0.18];
+            const xPos  = [cx - r * 0.38, cx, cx + r * 0.42];
+            for (let i = 0; i < 3; i++) {
+                c.beginPath(); c.arc(xPos[i], cy, sizes[i], 0, Math.PI * 2); c.fill();
+            }
+        } else if (type === 'FASTER_RELOAD') {
+            const ar = r * 0.55, hs = r * 0.22;
+            c.lineWidth = r * 0.17; c.lineCap = 'round';
+            const head = (a) => {
+                const ex = cx + ar * Math.cos(a), ey = cy + ar * Math.sin(a);
+                const tx = -Math.sin(a), ty = Math.cos(a);
+                c.beginPath();
+                c.moveTo(ex, ey);
+                c.lineTo(ex - tx * hs + ty * hs * 0.6, ey - ty * hs - tx * hs * 0.6);
+                c.lineTo(ex - tx * hs - ty * hs * 0.6, ey - ty * hs + tx * hs * 0.6);
+                c.closePath(); c.fill();
+            };
+            c.beginPath(); c.arc(cx, cy, ar, 195 * Math.PI / 180, 345 * Math.PI / 180); c.stroke();
+            head(345 * Math.PI / 180);
+            c.beginPath(); c.arc(cx, cy, ar, 15 * Math.PI / 180, 165 * Math.PI / 180); c.stroke();
+            head(165 * Math.PI / 180);
+        } else if (type === 'SPEED_BOOST') {
+            const w = r * 1.1, h = r * 0.52;
+            c.save(); c.translate(cx, cy); c.transform(1, 0, -0.7, 1, 0, 0);
+            c.beginPath(); c.roundRect(-w / 2, -h / 2, w, h, r * 0.14); c.fill();
+            c.restore();
+        }
+        return canvas;
+    }
+
     drawPowerup(pu) {
         const now = Date.now();
         const pulse = 0.65 + Math.sin(now / 280) * 0.35;
         const r = CONFIG.POWERUP_RADIUS || 40;
 
-        const cfg = {
-            FASTER_RELOAD:    { color: '#ffdd00', ring: '#ffe066' },
-            SPEED_BOOST:      { color: '#00aaff', ring: '#66ccff' },
-            LARGE_PROJECTILE: { color: '#ff6600', ring: '#ff9944' }
-        };
-        const style = cfg[pu.type] || { color: '#ffffff', ring: '#cccccc' };
+        // Build sprite once per powerup type
+        if (!this.powerupCache.has(pu.type)) {
+            this.powerupCache.set(pu.type, this._buildPowerupSprite(pu.type));
+        }
+        const sprite = this.powerupCache.get(pu.type);
+
+        const rings = { FASTER_RELOAD: '#ffe066', SPEED_BOOST: '#66ccff', LARGE_PROJECTILE: '#ff9944' };
+        const ringColor = rings[pu.type] || '#cccccc';
 
         this.ctx.save();
 
-        // Outer pulsing glow ring
-        this.ctx.globalAlpha = pulse * 0.5;
-        this.ctx.fillStyle = style.ring;
-        this.ctx.shadowBlur = 30;
-        this.ctx.shadowColor = style.ring;
-        this.ctx.beginPath();
-        this.ctx.arc(pu.x, pu.y, r * 1.5, 0, Math.PI * 2);
-        this.ctx.fill();
-
-        // Main circle
-        this.ctx.globalAlpha = 0.9;
-        this.ctx.shadowBlur = 15;
-        this.ctx.shadowColor = style.color;
-        this.ctx.fillStyle = style.color;
-        this.ctx.beginPath();
-        this.ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
-        this.ctx.fill();
-
-        // Border
-        this.ctx.globalAlpha = 1;
-        this.ctx.shadowBlur = 0;
-        this.ctx.strokeStyle = '#fff';
-        this.ctx.lineWidth = 4;
-        this.ctx.beginPath();
-        this.ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
-        this.ctx.stroke();
-
-        // Vector icon
-        this.ctx.fillStyle = 'rgba(0,0,0,0.75)';
-        this.ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-
-        if (pu.type === 'LARGE_PROJECTILE') {
-            // Three bullet-dots: small, medium, large left→right
-            const sizes = [r * 0.10, r * 0.14, r * 0.18];
-            const xPos  = [pu.x - r * 0.38, pu.x, pu.x + r * 0.42];
-            for (let i = 0; i < 3; i++) {
-                this.ctx.beginPath();
-                this.ctx.arc(xPos[i], pu.y, sizes[i], 0, Math.PI * 2);
-                this.ctx.fill();
-            }
-
-        } else if (pu.type === 'FASTER_RELOAD') {
-            // Two curved arrows in a circle (reload / recycle symbol)
-            const ar = r * 0.55;
-            const hs = r * 0.22;
-            const cx = pu.x, cy = pu.y;
-            this.ctx.lineWidth  = r * 0.17;
-            this.ctx.lineCap    = 'round';
-
-            const drawHead = (endAngle) => {
-                const ex = cx + ar * Math.cos(endAngle);
-                const ey = cy + ar * Math.sin(endAngle);
-                const tx = -Math.sin(endAngle); // CW tangent
-                const ty =  Math.cos(endAngle);
-                this.ctx.beginPath();
-                this.ctx.moveTo(ex, ey);
-                this.ctx.lineTo(ex - tx * hs + ty * hs * 0.6, ey - ty * hs - tx * hs * 0.6);
-                this.ctx.lineTo(ex - tx * hs - ty * hs * 0.6, ey - ty * hs + tx * hs * 0.6);
-                this.ctx.closePath();
-                this.ctx.fill();
-            };
-
-            // Arc 1: CW from 195° to 345°
+        // Glow: 3 layered semi-transparent circles (replaces shadowBlur entirely)
+        this.ctx.fillStyle = ringColor;
+        for (let g = 3; g >= 1; g--) {
+            this.ctx.globalAlpha = pulse * 0.14 * g / 3;
             this.ctx.beginPath();
-            this.ctx.arc(cx, cy, ar, 195 * Math.PI / 180, 345 * Math.PI / 180, false);
-            this.ctx.stroke();
-            drawHead(345 * Math.PI / 180);
-
-            // Arc 2: CW from 15° to 165°
-            this.ctx.beginPath();
-            this.ctx.arc(cx, cy, ar, 15 * Math.PI / 180, 165 * Math.PI / 180, false);
-            this.ctx.stroke();
-            drawHead(165 * Math.PI / 180);
-
-        } else if (pu.type === 'SPEED_BOOST') {
-            // Skewed rounded parallelogram – side view of tank tread moving forward
-            const w = r * 1.1;
-            const h = r * 0.52;
-            this.ctx.save();
-            this.ctx.translate(pu.x, pu.y);
-            this.ctx.transform(1, 0, -0.7, 1, 0, 0); // skew: top shifts right
-            this.ctx.beginPath();
-            this.ctx.roundRect(-w / 2, -h / 2, w, h, r * 0.14);
+            this.ctx.arc(pu.x, pu.y, r * (1 + g * 0.3), 0, Math.PI * 2);
             this.ctx.fill();
-            this.ctx.restore();
         }
+
+        // Blit pre-rendered circle + border + icon
+        this.ctx.globalAlpha = 1;
+        const half = sprite.width / 2;
+        this.ctx.drawImage(sprite, pu.x - half, pu.y - half);
 
         this.ctx.restore();
     }
@@ -2520,101 +2565,60 @@ class Game {
     }
 
     updateUI() {
-        // Update health
-        const healthContainer = document.getElementById('health-hearts');
-        healthContainer.innerHTML = '';
-        if (this.playerTank) {
-            for (let i = 0; i < this.playerTank.health; i++) {
-                const heart = document.createElement('div');
-                heart.className = 'heart';
-                healthContainer.appendChild(heart);
-            }
+        // Health – rebuild only when value changes
+        const health = this.playerTank ? this.playerTank.health : 0;
+        if (health !== this._uiCache.health) {
+            this._uiCache.health = health;
+            document.getElementById('health-hearts').innerHTML =
+                '<div class="heart"></div>'.repeat(health);
         }
 
-        // Update score - show team scores
-        document.getElementById('score').textContent = `Green: ${this.teamScores[1]} | Red: ${this.teamScores[2]}`;
-
-        // Update ammo indicator
-        const ammoIndicator = document.getElementById('ammo-indicator');
-        if (this.playerTank && this.playerTank.canShoot()) {
-            ammoIndicator.className = 'ready';
-        } else {
-            ammoIndicator.className = 'cooling';
+        // Score text
+        const scoreText = `Green: ${this.teamScores[1]} | Red: ${this.teamScores[2]}`;
+        if (scoreText !== this._uiCache.scoreText) {
+            this._uiCache.scoreText = scoreText;
+            document.getElementById('score').textContent = scoreText;
         }
 
-        // Update active powerup indicators
+        // Ammo indicator
+        const ammoClass = (this.playerTank && this.playerTank.canShoot()) ? 'ready' : 'cooling';
+        if (ammoClass !== this._uiCache.ammoClass) {
+            this._uiCache.ammoClass = ammoClass;
+            document.getElementById('ammo-indicator').className = ammoClass;
+        }
+
+        // Active powerup HUD – build HTML string, set only when changed
         const powerupDisplay = document.getElementById('active-powerups');
         if (powerupDisplay) {
-            powerupDisplay.innerHTML = '';
             const now = Date.now();
             const activePowerups = (this.playerTank && this.playerTank.activePowerups) || [];
-            const puInfo = {
-                FASTER_RELOAD: {
-                    label: 'Fast Reload', color: '#ffdd00',
-                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" style="vertical-align:middle;margin-right:5px"><path d="M4.24,9.19 A7,7,0,0,1,17.76,9.19" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><polygon points="17.76,9.19 18.56,6.38 15.66,7.16" fill="currentColor"/><path d="M17.76,12.81 A7,7,0,0,1,4.24,12.81" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><polygon points="4.24,12.81 3.44,15.62 6.34,14.84" fill="currentColor"/></svg>`
-                },
-                SPEED_BOOST: {
-                    label: 'Speed Boost', color: '#00aaff',
-                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" style="vertical-align:middle;margin-right:5px"><polygon points="7,5 21,5 15,17 1,17" fill="currentColor"/></svg>`
-                },
-                LARGE_PROJECTILE: {
-                    label: 'Big Shots', color: '#ff6600',
-                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" viewBox="0 0 26 14" style="vertical-align:middle;margin-right:5px"><circle cx="3" cy="7" r="2.2" fill="currentColor"/><circle cx="13" cy="7" r="3" fill="currentColor"/><circle cx="23" cy="7" r="4" fill="currentColor"/></svg>`
-                }
-            };
+            let puHTML = '';
             for (const pu of activePowerups) {
                 if (pu.expiresAt <= now) continue;
-                const info = puInfo[pu.type] || { label: pu.type, color: '#fff', icon: '' };
+                const info = this._puInfo[pu.type] || { color: '#fff', icon: '' };
                 const remaining = Math.ceil((pu.expiresAt - now) / 1000);
-                const el = document.createElement('div');
-                el.className = 'powerup-active';
-                el.style.color = info.color;
-                el.style.borderColor = info.color;
-                el.innerHTML = `${info.icon}${remaining}s`;
-                powerupDisplay.appendChild(el);
+                puHTML += `<div class="powerup-active" style="color:${info.color};border-color:${info.color}">${info.icon}${remaining}s</div>`;
+            }
+            if (puHTML !== this._uiCache.puText) {
+                this._uiCache.puText = puHTML;
+                powerupDisplay.innerHTML = puHTML;
             }
         }
 
-        // Update scoreboard - show by teams
-        const playerList = document.getElementById('player-list');
-        playerList.innerHTML = '';
-
-        // Team 1
-        const team1Header = document.createElement('div');
-        team1Header.innerHTML = '<strong style="color: #44ff44">Green Team: ' + this.teamScores[1] + '</strong>';
-        team1Header.style.marginBottom = '5px';
-        playerList.appendChild(team1Header);
-
-        const team1Tanks = this.tanks.filter(t => t.team === 1).sort((a, b) => b.score - a.score);
-        for (let tank of team1Tanks) {
-            const item = document.createElement('div');
-            item.className = 'player-item';
-            if (tank.isPlayer) item.classList.add('current');
-
-            item.innerHTML = `
-                <span style="color: ${tank.color}">${tank.name}</span>
-                <span>${tank.score}</span>
-            `;
-            playerList.appendChild(item);
+        // Scoreboard – build HTML string, set only when changed
+        const t1 = this.tanks.filter(t => t.team === 1).sort((a, b) => b.score - a.score);
+        const t2 = this.tanks.filter(t => t.team === 2).sort((a, b) => b.score - a.score);
+        let sbHTML = `<div style="margin-bottom:5px"><strong style="color:#44ff44">Green Team: ${this.teamScores[1]}</strong></div>`;
+        for (const t of t1) {
+            sbHTML += `<div class="player-item${t.isPlayer ? ' current' : ''}"><span style="color:${t.color}">${t.name}</span><span>${t.score}</span></div>`;
         }
-
-        // Team 2
-        const team2Header = document.createElement('div');
-        team2Header.innerHTML = '<strong style="color: #ff4444">Red Team: ' + this.teamScores[2] + '</strong>';
-        team2Header.style.marginTop = '10px';
-        team2Header.style.marginBottom = '5px';
-        playerList.appendChild(team2Header);
-
-        const team2Tanks = this.tanks.filter(t => t.team === 2).sort((a, b) => b.score - a.score);
-        for (let tank of team2Tanks) {
-            const item = document.createElement('div');
-            item.className = 'player-item';
-
-            item.innerHTML = `
-                <span style="color: ${tank.color}">${tank.name}</span>
-                <span>${tank.score}</span>
-            `;
-            playerList.appendChild(item);
+        sbHTML += `<div style="margin-top:10px;margin-bottom:5px"><strong style="color:#ff4444">Red Team: ${this.teamScores[2]}</strong></div>`;
+        for (const t of t2) {
+            sbHTML += `<div class="player-item"><span style="color:${t.color}">${t.name}</span><span>${t.score}</span></div>`;
+        }
+        if (sbHTML !== this._uiCache.sbText) {
+            this._uiCache.sbText = sbHTML;
+            document.getElementById('player-list').innerHTML = sbHTML;
         }
     }
 
