@@ -154,6 +154,21 @@ class RoomManager {
     }
 
     /**
+     * Force-remove a player or bot from the lobby (used for host-kick)
+     */
+    forceRemoveFromLobby(targetId) {
+        const roomCode = this.playerRooms.get(targetId);
+        if (!roomCode) return false;
+
+        const room = this.rooms.get(roomCode);
+        if (!room || room.state !== 'lobby') return false;
+
+        room.removeMember(targetId);
+        this.playerRooms.delete(targetId);
+        return true;
+    }
+
+    /**
      * Clean up finished games
      */
     cleanupFinishedGames() {

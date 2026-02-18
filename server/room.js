@@ -138,10 +138,10 @@ class Room {
     }
 
     /**
-     * Handle game over
+     * Handle game over - return room to lobby state so players can play again
      */
     endGame(winningTeam, teamScores, stats) {
-        this.state = 'finished';
+        this.state = 'lobby';
         if (this.gameServer) {
             this.gameServer.stop();
             this.gameServer = null;
@@ -150,8 +150,23 @@ class Room {
         this.io.to(this.code).emit('gameOver', {
             winningTeam,
             teamScores,
-            stats
+            stats,
+            players: this.getPlayerList()
         });
+    }
+
+    /**
+     * Remove a specific bot from the lobby
+     */
+    removeMember(memberId) {
+        this.players.delete(memberId);
+        // If host was removed (shouldn't happen, but just in case), assign new host
+        if (memberId === this.hostId && this.players.size > 0) {
+            // Find first non-bot player
+            for (const [id, p] of this.players.entries()) {
+                if (!p.isBot) { this.hostId = id; break; }
+            }
+        }
     }
 
     /**

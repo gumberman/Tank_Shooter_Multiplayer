@@ -145,12 +145,16 @@ class GameServer {
 
         const { w, a, s, d, space } = input.input;
 
-        // Rotation
+        // Rotation (speed boost also doubles turn rate)
+        const now2 = Date.now();
+        const hasSpeedBoost = tank.activePowerups &&
+            tank.activePowerups.some(p => p.type === 'SPEED_BOOST' && p.expiresAt > now2);
+        const turnSpeed = CONFIG.ROTATION_SPEED * (hasSpeedBoost ? 2 : 1);
         if (a) {
-            tank.rotation = normalizeAngle(tank.rotation - CONFIG.ROTATION_SPEED);
+            tank.rotation = normalizeAngle(tank.rotation - turnSpeed);
         }
         if (d) {
-            tank.rotation = normalizeAngle(tank.rotation + CONFIG.ROTATION_SPEED);
+            tank.rotation = normalizeAngle(tank.rotation + turnSpeed);
         }
 
         // Movement
@@ -266,9 +270,13 @@ class GameServer {
 
         // Check for large projectile powerup
         let bulletRadius = CONFIG.BULLET_RADIUS;
+        let bulletDamage = 1;
         if (tank.activePowerups) {
             const large = tank.activePowerups.find(p => p.type === 'LARGE_PROJECTILE' && p.expiresAt > now);
-            if (large) bulletRadius = Math.round(CONFIG.BULLET_RADIUS * CONFIG.LARGE_PROJECTILE_MULTIPLIER);
+            if (large) {
+                bulletRadius = Math.round(CONFIG.BULLET_RADIUS * CONFIG.LARGE_PROJECTILE_MULTIPLIER);
+                bulletDamage = 2;
+            }
         }
 
         const spawnDist = CONFIG.TANK_SIZE / 2 + bulletRadius + 5;
@@ -282,6 +290,7 @@ class GameServer {
             ownerId: tank.id,
             team: tank.team,
             radius: bulletRadius,
+            damage: bulletDamage,
             createdAt: now
         });
 
@@ -395,7 +404,8 @@ class GameServer {
      * Handle bullet hitting tank
      */
     handleBulletHit(bullet, tank) {
-        tank.health--;
+        const damage = bullet.damage || 1;
+        tank.health -= damage;
 
         if (tank.health <= 0) {
             // Tank destroyed
@@ -410,9 +420,9 @@ class GameServer {
             tank.health = 0;
             tank.activePowerups = []; // Clear powerups on death
 
-            // Calculate respawn time
+            // Calculate respawn time: 1s per death, capped at 10s
             const respawnDelay = Math.min(
-                CONFIG.BASE_RESPAWN_TIME + tank.deaths * CONFIG.RESPAWN_INCREMENT,
+                CONFIG.BASE_RESPAWN_TIME + (tank.deaths - 1) * CONFIG.RESPAWN_INCREMENT,
                 CONFIG.MAX_RESPAWN_TIME
             );
             tank.respawnTimer = respawnDelay;

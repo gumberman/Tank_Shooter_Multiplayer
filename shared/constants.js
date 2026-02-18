@@ -13,14 +13,14 @@
         SHOOT_COOLDOWN: 1000, // ms
         MAX_HEALTH: 3,
         WIN_SCORE: 24,
-        ROTATION_SPEED: 2,
+        ROTATION_SPEED: 1.2,
         NUM_OBSTACLES: 6, // Fixed for multiplayer consistency
         TICK_RATE: 16, // Client render rate
         SERVER_TICK_RATE: 16, // Server update rate (ms) - matches client render rate
         MAX_TEAM_SIZE: 3,
         BASE_RESPAWN_TIME: 1000,
-        RESPAWN_INCREMENT: 2000,
-        MAX_RESPAWN_TIME: 20000,
+        RESPAWN_INCREMENT: 1000,
+        MAX_RESPAWN_TIME: 10000,
         INTERPOLATION_DELAY: 50, // ms - reduced for more responsive feel
         SNAPSHOT_RATE: 1000, // ms - full snapshot interval
         // Power-up settings

@@ -60,6 +60,7 @@ class NetworkManager {
                 'gameStart',
                 'gameState',
                 'gameOver',
+                'kicked',
                 'error'
             ];
 
@@ -143,6 +144,14 @@ class NetworkManager {
     addBot(team) {
         if (!this.connected) return;
         this.socket.emit('addBot', { team });
+    }
+
+    /**
+     * Remove a bot or player from the lobby (host only)
+     */
+    removeFromLobby(targetId) {
+        if (!this.connected) return;
+        this.socket.emit('removeFromLobby', { targetId });
     }
 
     /**

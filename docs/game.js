@@ -983,7 +983,7 @@ class Game {
         // Player left
         this.networkManager.on('playerLeft', (data) => {
             console.log('Player left:', data);
-            this.updateLobbyPlayers();
+            this.updateLobbyPlayers(data.players || null);
         });
 
         // Team changed
@@ -1012,6 +1012,16 @@ class Game {
         // Game over
         this.networkManager.on('gameOver', (data) => {
             this.handleGameOver(data);
+        });
+
+        // Kicked from lobby
+        this.networkManager.on('kicked', (data) => {
+            alert(data.message || 'You were removed from the lobby');
+            if (this.networkManager) {
+                this.networkManager.disconnect();
+                this.networkManager = null;
+            }
+            this.showMainMenu();
         });
 
         // Error
@@ -1048,17 +1058,26 @@ class Game {
         const team1 = players.filter(p => p.team === 1);
         const team2 = players.filter(p => p.team === 2);
 
+        const makeEntry = (p) => {
+            const isMe = p.id === this.playerId;
+            const marker = isMe ? ' <em>(You)</em>' : (p.isBot ? ' <em>[Bot]</em>' : '');
+            const removeBtn = (this.isHost && !isMe)
+                ? `<button onclick="game.removeFromLobby('${p.id}')" style="margin-left:8px;padding:2px 8px;background:#880000;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:0.85em;">×</button>`
+                : '';
+            return `<div style="display:flex;align-items:center;gap:4px;">• ${p.name}${marker}${removeBtn}</div>`;
+        };
+
         lobbyPlayers.innerHTML += '<div style="color: #00ff00;"><strong>Green Team:</strong></div>';
-        team1.forEach(p => {
-            const marker = p.id === this.playerId ? ' (You)' : '';
-            lobbyPlayers.innerHTML += `<div>• ${p.name}${marker}</div>`;
-        });
+        team1.forEach(p => { lobbyPlayers.innerHTML += makeEntry(p); });
 
         lobbyPlayers.innerHTML += '<div style="color: #ff0000; margin-top: 10px;"><strong>Red Team:</strong></div>';
-        team2.forEach(p => {
-            const marker = p.id === this.playerId ? ' (You)' : '';
-            lobbyPlayers.innerHTML += `<div>• ${p.name}${marker}</div>`;
-        });
+        team2.forEach(p => { lobbyPlayers.innerHTML += makeEntry(p); });
+    }
+
+    removeFromLobby(targetId) {
+        if (this.networkManager && this.networkManager.isConnected()) {
+            this.networkManager.removeFromLobby(targetId);
+        }
     }
 
     startMultiplayerGame() {
@@ -1106,6 +1125,9 @@ class Game {
         this.powerups = [];
         this.teamScores = { 1: 0, 2: 0 };
         this.usedNumbers.clear();
+        // Particle tracking
+        this.prevBulletPositions = new Map(); // bulletId -> {x, y, team}
+        this.prevTankStates = new Map();       // tankId -> {health, respawning}
 
         // Generate obstacles using server seed
         this.generateObstacles(this.obstacleSeed);
@@ -1139,6 +1161,59 @@ class Game {
         if (state.fullSnapshot && state.obstacles) {
             this.obstacles = state.obstacles;
         }
+
+        // ---- Particle effects: detect state changes ----
+        if (this.prevBulletPositions) {
+            const currentBulletIds = new Set(state.bullets.map(b => b.id));
+
+            // New bullets → muzzle flash
+            for (const b of state.bullets) {
+                if (!this.prevBulletPositions.has(b.id)) {
+                    this.spawnParticles(b.x, b.y, '#ffff88', 8);
+                }
+            }
+
+            // Disappeared bullets → impact smoke (if within map bounds)
+            for (const [bulletId, info] of this.prevBulletPositions) {
+                if (!currentBulletIds.has(bulletId)) {
+                    if (info.x > 0 && info.x < CONFIG.CANVAS_WIDTH &&
+                        info.y > 0 && info.y < CONFIG.CANVAS_HEIGHT) {
+                        this.spawnParticles(info.x, info.y, '#aaaaaa', 8);
+                    }
+                }
+            }
+
+            // Update bullet tracking
+            this.prevBulletPositions.clear();
+            for (const b of state.bullets) {
+                this.prevBulletPositions.set(b.id, { x: b.x, y: b.y, team: b.team });
+            }
+        }
+
+        // Tank state changes → hit / death particles
+        if (this.prevTankStates) {
+            for (const serverTank of state.tanks) {
+                const prev = this.prevTankStates.get(serverTank.id);
+                if (prev) {
+                    const color = TEAM_COLORS[serverTank.team] || '#ffffff';
+                    if (!prev.respawning && serverTank.respawning) {
+                        // Tank just died → big explosion
+                        const tank = this.tanks.find(t => t.id === serverTank.id);
+                        const ex = tank ? tank.x : serverTank.x;
+                        const ey = tank ? tank.y : serverTank.y;
+                        this.spawnParticles(ex, ey, color, 40);
+                    } else if (serverTank.health < prev.health && serverTank.health > 0) {
+                        // Tank took a hit
+                        this.spawnParticles(serverTank.x, serverTank.y, color, 15);
+                    }
+                }
+                this.prevTankStates.set(serverTank.id, {
+                    health: serverTank.health,
+                    respawning: serverTank.respawning
+                });
+            }
+        }
+        // ---- End particle detection ----
 
         // Update bullets directly from server (preserve radius for large projectile powerup)
         this.bullets = state.bullets.map(b => ({
@@ -1319,8 +1394,12 @@ class Game {
 
     handleGameOver(data) {
         this.gameRunning = false;
+        this.lobbyPlayers = data.players || null; // Save for return to lobby
         const winningTeamName = data.winningTeam === 1 ? 'Green' : 'Red';
         this.showGameOver(winningTeamName, data.stats);
+        // Change play-again button text for multiplayer
+        const btn = document.getElementById('play-again-btn');
+        if (btn) btn.textContent = 'Return to Lobby';
     }
 
     showJoinMenu() {
@@ -2257,7 +2336,8 @@ class Game {
         // Death count message
         this.ctx.fillStyle = '#ffffff';
         this.ctx.font = '40px Arial';
-        const deathMsg = `Deaths: ${this.playerTank.deaths} | Next respawn: ${Math.min(1 + this.playerTank.deaths * 2, 20)}s`;
+        const nextRespawn = Math.min(this.playerTank.deaths + 1, 10);
+        const deathMsg = `Deaths: ${this.playerTank.deaths} | Next respawn: ${nextRespawn}s`;
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth = 4;
         this.ctx.strokeText(deathMsg, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 250);
@@ -2270,11 +2350,11 @@ class Game {
         const r = CONFIG.POWERUP_RADIUS || 40;
 
         const cfg = {
-            FASTER_RELOAD: { color: '#ffdd00', ring: '#ffe066', label: 'R' },
-            SPEED_BOOST:   { color: '#00aaff', ring: '#66ccff', label: 'S' },
-            LARGE_PROJECTILE: { color: '#ff6600', ring: '#ff9944', label: 'L' }
+            FASTER_RELOAD:    { color: '#ffdd00', ring: '#ffe066' },
+            SPEED_BOOST:      { color: '#00aaff', ring: '#66ccff' },
+            LARGE_PROJECTILE: { color: '#ff6600', ring: '#ff9944' }
         };
-        const style = cfg[pu.type] || { color: '#ffffff', ring: '#cccccc', label: '?' };
+        const style = cfg[pu.type] || { color: '#ffffff', ring: '#cccccc' };
 
         this.ctx.save();
 
@@ -2305,12 +2385,74 @@ class Game {
         this.ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
         this.ctx.stroke();
 
-        // Label letter
-        this.ctx.fillStyle = '#000';
-        this.ctx.font = `bold ${Math.round(r * 1.1)}px Arial`;
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText(style.label, pu.x, pu.y);
+        // Vector icon
+        this.ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        this.ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+
+        if (pu.type === 'FASTER_RELOAD') {
+            // Three bullet-dots: small, medium, large left→right
+            const sizes  = [r * 0.10, r * 0.14, r * 0.18];
+            const xPos   = [pu.x - r * 0.38, pu.x, pu.x + r * 0.42];
+            for (let i = 0; i < 3; i++) {
+                this.ctx.beginPath();
+                this.ctx.arc(xPos[i], pu.y, sizes[i], 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+
+        } else if (pu.type === 'LARGE_PROJECTILE') {
+            // Elongated bullet pointing right
+            const bw = r * 1.0;
+            const bh = r * 0.40;
+            const bx = pu.x - bw * 0.25; // slight left offset to center visually
+            this.ctx.save();
+            this.ctx.translate(bx, pu.y);
+            this.ctx.beginPath();
+            // Flat back (left), round arc
+            this.ctx.arc(-bw * 0.28, 0, bh / 2, Math.PI / 2, 3 * Math.PI / 2);
+            // Top edge to nose
+            this.ctx.lineTo(bw * 0.38, -bh / 2);
+            // Pointed nose
+            this.ctx.lineTo(bw * 0.55, 0);
+            // Bottom edge from nose
+            this.ctx.lineTo(bw * 0.38, bh / 2);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.restore();
+
+        } else if (pu.type === 'SPEED_BOOST') {
+            // Boot with speed streaks
+            const s = r * 0.048; // scale unit
+            this.ctx.save();
+            this.ctx.translate(pu.x + s * 1.5, pu.y + s * 2.5);
+
+            // Boot shaft (upper vertical part)
+            const sw = s * 3.2;
+            const sh = s * 5.5;
+            const tw = s * 7.0;
+            const th = s * 2.8;
+            this.ctx.beginPath();
+            this.ctx.rect(-sw / 2, -sh, sw, sh);         // shaft
+            this.ctx.rect(-sw / 2, 0, tw, th);            // toe / foot
+            this.ctx.rect(-sw / 2 - s, th, tw + s, th * 0.45); // sole
+            this.ctx.fill();
+
+            // Speed streaks to the left
+            this.ctx.lineWidth = s * 1.6;
+            this.ctx.lineCap = 'round';
+            const streakX = -sw / 2 - s * 2.0;
+            const streakData = [
+                { y: -sh * 0.72, len: s * 5.5 },
+                { y: -sh * 0.40, len: s * 4.0 },
+                { y: -sh * 0.08, len: s * 2.8 }
+            ];
+            for (const sd of streakData) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(streakX, sd.y);
+                this.ctx.lineTo(streakX - sd.len, sd.y);
+                this.ctx.stroke();
+            }
+            this.ctx.restore();
+        }
 
         this.ctx.restore();
     }
@@ -2418,20 +2560,29 @@ class Game {
             powerupDisplay.innerHTML = '';
             const now = Date.now();
             const activePowerups = (this.playerTank && this.playerTank.activePowerups) || [];
-            const puLabels = {
-                FASTER_RELOAD: { label: 'Fast Reload', color: '#ffdd00' },
-                SPEED_BOOST:   { label: 'Speed Boost', color: '#00aaff' },
-                LARGE_PROJECTILE: { label: 'Big Shots', color: '#ff6600' }
+            const puInfo = {
+                FASTER_RELOAD: {
+                    label: 'Fast Reload', color: '#ffdd00',
+                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" style="vertical-align:middle;margin-right:5px"><circle cx="3" cy="7" r="2.2" fill="currentColor"/><circle cx="13" cy="7" r="3" fill="currentColor"/><circle cx="23" cy="7" r="4" fill="currentColor"/></svg>`
+                },
+                SPEED_BOOST: {
+                    label: 'Speed Boost', color: '#00aaff',
+                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="20" style="vertical-align:middle;margin-right:5px"><rect x="14" y="1" width="5" height="10" fill="currentColor"/><rect x="14" y="10" width="10" height="5" fill="currentColor"/><rect x="13" y="14" width="12" height="3" fill="currentColor"/><line x1="12" y1="3" x2="2" y2="3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="12" y1="7" x2="4" y2="7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="12" y1="11" x2="7" y2="11" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`
+                },
+                LARGE_PROJECTILE: {
+                    label: 'Big Shots', color: '#ff6600',
+                    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" style="vertical-align:middle;margin-right:5px"><path d="M2,7 a4,4 0 0,1 4,-4 L18,3 L24,7 L18,11 L6,11 a4,4 0 0,1 -4,-4 Z" fill="currentColor"/></svg>`
+                }
             };
             for (const pu of activePowerups) {
                 if (pu.expiresAt <= now) continue;
-                const info = puLabels[pu.type] || { label: pu.type, color: '#fff' };
+                const info = puInfo[pu.type] || { label: pu.type, color: '#fff', icon: '' };
                 const remaining = Math.ceil((pu.expiresAt - now) / 1000);
                 const el = document.createElement('div');
                 el.className = 'powerup-active';
                 el.style.color = info.color;
                 el.style.borderColor = info.color;
-                el.textContent = `${info.label} ${remaining}s`;
+                el.innerHTML = `${info.icon}${remaining}s`;
                 powerupDisplay.appendChild(el);
             }
         }
@@ -2592,8 +2743,20 @@ class Game {
 
     playAgain() {
         document.getElementById('game-over-overlay').style.display = 'none';
-        this.initGame();
-        this.startGameLoop();
+        if (this.gameMode === 'multiplayer') {
+            // Return to lobby for multiplayer
+            this.gameMode = null;
+            this.gameRunning = false;
+            // Reset play-again button text
+            const btn = document.getElementById('play-again-btn');
+            if (btn) btn.textContent = 'Play Again';
+            this.showMenu();
+            this.showLobby(this.roomCode, this.lobbyPlayers);
+        } else {
+            // Restart for practice mode
+            this.initGame();
+            this.startGameLoop();
+        }
     }
 
     startGameLoop() {

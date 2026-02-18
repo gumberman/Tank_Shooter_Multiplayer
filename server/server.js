@@ -171,6 +171,36 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Remove bot or player from lobby (host only)
+    socket.on('removeFromLobby', ({ targetId }) => {
+        try {
+            const room = roomManager.getPlayerRoom(socket.id);
+            if (!room || room.state !== 'lobby') {
+                socket.emit('error', { message: 'Not in lobby' });
+                return;
+            }
+            if (room.hostId !== socket.id) {
+                socket.emit('error', { message: 'Only the host can remove players' });
+                return;
+            }
+            if (targetId === socket.id) return; // Cannot remove self
+
+            const isBot = targetId.startsWith('lobby_bot_');
+            if (!isBot) {
+                // Notify the kicked player
+                io.to(targetId).emit('kicked', { message: 'You were removed from the lobby by the host' });
+            }
+            roomManager.forceRemoveFromLobby(targetId);
+            io.to(room.code).emit('playerLeft', {
+                playerId: targetId,
+                players: room.getPlayerList()
+            });
+            console.log(`[${new Date().toISOString()}] ${isBot ? 'Bot' : 'Player'} ${targetId} removed from room ${room.code} by host`);
+        } catch (error) {
+            socket.emit('error', { message: error.message });
+        }
+    });
+
     // Leave room
     socket.on('leaveRoom', () => {
         handleDisconnect(socket.id);
@@ -189,7 +219,10 @@ io.on('connection', (socket) => {
 
             if (wasRemoved) {
                 // Player was removed (grace period or not in game)
-                io.to(room.code).emit('playerLeft', { playerId });
+                io.to(room.code).emit('playerLeft', {
+                    playerId,
+                    players: room.getPlayerList()
+                });
             } else {
                 // Player is in game, converted to bot
                 io.to(room.code).emit('playerDisconnected', { playerId });
