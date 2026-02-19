@@ -3,6 +3,46 @@
 // ============================================
 // Note: CONFIG and TEAM_COLORS are loaded from constants.js
 
+// Cached constants for performance
+const TANK_SIZE = CONFIG.TANK_SIZE;
+const CANVAS_WIDTH = CONFIG.CANVAS_WIDTH;
+const CANVAS_HEIGHT = CONFIG.CANVAS_HEIGHT;
+const BULLET_RADIUS = CONFIG.BULLET_RADIUS;
+const POWERUP_RADIUS = CONFIG.POWERUP_RADIUS || 40;
+
+// Pre-rendered player indicator ring sprite (built once)
+let playerIndicatorSprite = null;
+function getPlayerIndicatorSprite() {
+    if (playerIndicatorSprite) return playerIndicatorSprite;
+    const baseR = TANK_SIZE / 2 + 15;
+    const size = (baseR + 20) * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    // Outer glow layers
+    ctx.strokeStyle = '#ffff00';
+    ctx.globalAlpha = 0.15;
+    ctx.lineWidth = 16;
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+    ctx.stroke();
+    // Core ring
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+    ctx.stroke();
+    playerIndicatorSprite = canvas;
+    return canvas;
+}
+
 class Tank {
     constructor(x, y, color, id, isPlayer = false, team = 1, number = 1) {
         this.x = x;
@@ -20,6 +60,10 @@ class Tank {
         this.name = isPlayer ? 'You' : `Tank ${id}`;
         this.respawning = false;
         this.respawnTimer = 0;
+
+        // Cached name label sprite (rendered once, reused every frame)
+        this._nameLabelCache = null;
+        this._cachedName = null;
 
         // AI state - Enhanced
         this.lastX = x;
@@ -639,42 +683,66 @@ class Tank {
         };
     }
 
+    // Build cached name label sprite
+    _buildNameLabel() {
+        const isPlayer = this.isPlayer;
+        const text = isPlayer ? 'YOU' : this.name;
+        const font = isPlayer ? 'bold 72px Arial' : 'bold 54px Arial';
+        const fillColor = isPlayer ? '#ffff00' : '#fff';
+
+        // Measure text
+        const measureCanvas = document.createElement('canvas');
+        const measureCtx = measureCanvas.getContext('2d');
+        measureCtx.font = font;
+        const metrics = measureCtx.measureText(text);
+        const width = Math.ceil(metrics.width) + 20;
+        const height = isPlayer ? 90 : 70;
+
+        // Create sprite
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        ctx.font = font;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.fillStyle = fillColor;
+
+        const cx = width / 2, cy = height / 2;
+        ctx.strokeText(text, cx, cy);
+        ctx.fillText(text, cx, cy);
+
+        this._nameLabelCache = canvas;
+        this._cachedName = this.name;
+        return canvas;
+    }
+
     draw(ctx) {
-        // Apply transform without save/restore – use setTransform + resetTransform
+        // Use cached constants
+        const s = TANK_SIZE;
+        const halfS = s / 2;
+
+        // Apply transform without save/restore
         const rad = this.rotation * Math.PI / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
         ctx.setTransform(cos, sin, -sin, cos, this.x, this.y);
 
-        // Draw player indicator (layered rings for glow effect - no shadowBlur for performance)
+        // Draw player indicator using pre-rendered sprite
         if (this.isPlayer) {
-            const baseR = CONFIG.TANK_SIZE / 2 + 15;
-            // Outer glow layers (cheap alternative to shadowBlur)
-            ctx.globalAlpha = 0.15;
-            ctx.strokeStyle = '#ffff00';
-            ctx.lineWidth = 16;
-            ctx.beginPath();
-            ctx.arc(0, 0, baseR, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.globalAlpha = 0.3;
-            ctx.lineWidth = 10;
-            ctx.beginPath();
-            ctx.arc(0, 0, baseR, 0, Math.PI * 2);
-            ctx.stroke();
-            // Core ring
-            ctx.globalAlpha = 1;
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(0, 0, baseR, 0, Math.PI * 2);
-            ctx.stroke();
+            const sprite = getPlayerIndicatorSprite();
+            const halfSprite = sprite.width / 2;
+            ctx.drawImage(sprite, -halfSprite, -halfSprite);
         }
 
         // Draw tank body (rounded corners)
-        const s = CONFIG.TANK_SIZE;
         const cr = 14;
         ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.roundRect(-s / 2, -s / 2, s, s, cr);
+        ctx.roundRect(-halfS, -halfS, s, s, cr);
         ctx.fill();
 
         // Draw tank outline (thin yellow for player only)
@@ -682,46 +750,39 @@ class Tank {
             ctx.strokeStyle = '#ffff00';
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.roundRect(-s / 2, -s / 2, s, s, cr);
+            ctx.roundRect(-halfS, -halfS, s, s, cr);
             ctx.stroke();
         }
 
         // Draw barrel (thick, with rounded muzzle)
         ctx.fillStyle = '#333';
         const barrelWidth = 24;
-        const barrelLength = CONFIG.TANK_SIZE * 0.9;
+        const barrelLength = s * 0.9;
         ctx.beginPath();
         ctx.roundRect(0, -barrelWidth / 2, barrelLength, barrelWidth, [0, barrelWidth / 2, barrelWidth / 2, 0]);
         ctx.fill();
 
         // Draw health indicator
         if (this.health < CONFIG.MAX_HEALTH) {
-            const barWidth = CONFIG.TANK_SIZE;
+            const barWidth = s;
             const barHeight = 8;
             const healthPercent = this.health / CONFIG.MAX_HEALTH;
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            ctx.fillRect(-barWidth / 2, -CONFIG.TANK_SIZE / 2 - 20, barWidth, barHeight);
+            ctx.fillRect(-halfS, -halfS - 20, barWidth, barHeight);
             ctx.fillStyle = 'red';
-            ctx.fillRect(-barWidth / 2, -CONFIG.TANK_SIZE / 2 - 20, barWidth * healthPercent, barHeight);
+            ctx.fillRect(-halfS, -halfS - 20, barWidth * healthPercent, barHeight);
         }
 
         // Reset to identity for name tag (world coords)
         ctx.resetTransform();
 
-        ctx.fillStyle = this.isPlayer ? '#ffff00' : '#fff';
-        ctx.font = this.isPlayer ? 'bold 72px Arial' : 'bold 54px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.lineWidth = 3;
-
-        if (this.isPlayer) {
-            ctx.strokeText('YOU', this.x, this.y - CONFIG.TANK_SIZE - 30);
-            ctx.fillText('YOU', this.x, this.y - CONFIG.TANK_SIZE - 30);
-        } else {
-            ctx.strokeText(this.name, this.x, this.y - CONFIG.TANK_SIZE - 25);
-            ctx.fillText(this.name, this.x, this.y - CONFIG.TANK_SIZE - 25);
+        // Use cached name label sprite (rebuild if name changed)
+        if (!this._nameLabelCache || this._cachedName !== this.name) {
+            this._buildNameLabel();
         }
+        const label = this._nameLabelCache;
+        const labelY = this.isPlayer ? this.y - s - 30 : this.y - s - 25;
+        ctx.drawImage(label, this.x - label.width / 2, labelY - label.height / 2);
     }
 }
 
@@ -2354,22 +2415,27 @@ class Game {
     }
 
     draw() {
+        // Cache timestamp and pulse calculation for this frame
+        const frameTime = Date.now();
+        this._framePulse = 0.65 + Math.sin(frameTime / 280) * 0.35;
+
         // Blit merged static scene (bg + grid + slow zones + obstacles)
         this.buildStaticCanvas();
         this.ctx.drawImage(this.staticCanvas, 0, 0);
 
         // Draw particles – inline (no save/restore per particle)
-        const prevAlpha = this.ctx.globalAlpha;
+        const ctx = this.ctx;
+        const prevAlpha = ctx.globalAlpha;
         for (const p of this.particles) {
-            this.ctx.globalAlpha = p.life;
-            this.ctx.fillStyle = p.color;
-            this.ctx.beginPath();
-            this.ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-            this.ctx.fill();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+            ctx.fill();
         }
-        this.ctx.globalAlpha = prevAlpha;
+        ctx.globalAlpha = prevAlpha;
 
-        // Draw power-ups
+        // Draw power-ups (using cached pulse from above)
         if (this.powerups) {
             for (const pu of this.powerups) {
                 this.drawPowerup(pu);
@@ -2381,9 +2447,9 @@ class Game {
         let team1Path = null, team2Path = null;
         for (const bullet of this.bullets) {
             if (typeof bullet.draw === 'function') {
-                bullet.draw(this.ctx);
+                bullet.draw(ctx);
             } else {
-                const rad = bullet.radius || CONFIG.BULLET_RADIUS;
+                const rad = bullet.radius || BULLET_RADIUS;
                 if (bullet.team === 1) {
                     if (!team1Path) team1Path = new Path2D();
                     team1Path.moveTo(bullet.x + rad, bullet.y);
@@ -2395,13 +2461,13 @@ class Game {
                 }
             }
         }
-        if (team1Path) { this.ctx.fillStyle = '#00ff00'; this.ctx.fill(team1Path); }
-        if (team2Path) { this.ctx.fillStyle = '#ff0000'; this.ctx.fill(team2Path); }
+        if (team1Path) { ctx.fillStyle = '#00ff00'; ctx.fill(team1Path); }
+        if (team2Path) { ctx.fillStyle = '#ff0000'; ctx.fill(team2Path); }
 
         // Draw tanks
         for (const tank of this.tanks) {
             if (tank.health > 0 && !tank.respawning) {
-                tank.draw(this.ctx);
+                tank.draw(ctx);
             }
         }
 
@@ -2413,35 +2479,38 @@ class Game {
 
     drawRespawnTimer() {
         const seconds = Math.ceil(this.playerTank.respawnTimer / 1000);
+        const ctx = this.ctx;
+        const cx = CANVAS_WIDTH / 2;
+        const cy = CANVAS_HEIGHT / 2;
 
         // Semi-transparent overlay
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
         // Main respawn message
-        this.ctx.fillStyle = '#ff4444';
-        this.ctx.font = 'bold 120px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 8;
-        this.ctx.strokeText('RESPAWNING', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 - 100);
-        this.ctx.fillText('RESPAWNING', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 - 100);
+        ctx.fillStyle = '#ff4444';
+        ctx.font = 'bold 120px Arial';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 8;
+        ctx.strokeText('RESPAWNING', cx, cy - 100);
+        ctx.fillText('RESPAWNING', cx, cy - 100);
 
         // Countdown timer
-        this.ctx.fillStyle = '#ffff00';
-        this.ctx.font = 'bold 200px Arial';
-        this.ctx.strokeText(seconds, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 100);
-        this.ctx.fillText(seconds, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 100);
+        ctx.fillStyle = '#ffff00';
+        ctx.font = 'bold 200px Arial';
+        ctx.strokeText(seconds, cx, cy + 100);
+        ctx.fillText(seconds, cx, cy + 100);
 
         // Death count message
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '40px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '40px Arial';
         const nextRespawn = Math.min(this.playerTank.deaths + 1, 10);
         const deathMsg = `Deaths: ${this.playerTank.deaths} | Next respawn: ${nextRespawn}s`;
-        this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 4;
-        this.ctx.strokeText(deathMsg, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 250);
-        this.ctx.fillText(deathMsg, CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 250);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 4;
+        ctx.strokeText(deathMsg, cx, cy + 250);
+        ctx.fillText(deathMsg, cx, cy + 250);
     }
 
     _buildPowerupSprite(type) {
@@ -2503,9 +2572,10 @@ class Game {
     }
 
     drawPowerup(pu) {
-        const now = Date.now();
-        const pulse = 0.65 + Math.sin(now / 280) * 0.35;
-        const r = CONFIG.POWERUP_RADIUS || 40;
+        // Use cached pulse from draw() - no Date.now() or Math.sin() per powerup
+        const pulse = this._framePulse;
+        const r = POWERUP_RADIUS;
+        const ctx = this.ctx;
 
         // Build sprite once per powerup type
         if (!this.powerupCache.has(pu.type)) {
@@ -2516,46 +2586,49 @@ class Game {
         const rings = { FASTER_RELOAD: '#ffe066', SPEED_BOOST: '#66ccff', LARGE_PROJECTILE: '#ff9944' };
         const ringColor = rings[pu.type] || '#cccccc';
 
-        this.ctx.save();
-
-        // Glow: 3 layered semi-transparent circles (replaces shadowBlur entirely)
-        this.ctx.fillStyle = ringColor;
+        // Glow: 3 layered semi-transparent circles (no save/restore - manually track alpha)
+        const prevAlpha = ctx.globalAlpha;
+        ctx.fillStyle = ringColor;
         for (let g = 3; g >= 1; g--) {
-            this.ctx.globalAlpha = pulse * 0.14 * g / 3;
-            this.ctx.beginPath();
-            this.ctx.arc(pu.x, pu.y, r * (1 + g * 0.3), 0, Math.PI * 2);
-            this.ctx.fill();
+            ctx.globalAlpha = pulse * 0.14 * g / 3;
+            ctx.beginPath();
+            ctx.arc(pu.x, pu.y, r * (1 + g * 0.3), 0, Math.PI * 2);
+            ctx.fill();
         }
 
         // Blit pre-rendered circle + border + icon
-        this.ctx.globalAlpha = 1;
+        ctx.globalAlpha = 1;
         const half = sprite.width / 2;
-        this.ctx.drawImage(sprite, pu.x - half, pu.y - half);
+        ctx.drawImage(sprite, pu.x - half, pu.y - half);
 
-        this.ctx.restore();
+        // Restore alpha
+        ctx.globalAlpha = prevAlpha;
     }
 
     buildStaticCanvas() {
         // Builds once; set this.staticCanvas = null to force rebuild (e.g. new obstacles)
         if (this.staticCanvas) return;
 
+        const cw = CANVAS_WIDTH;
+        const ch = CANVAS_HEIGHT;
+
         this.staticCanvas = document.createElement('canvas');
-        this.staticCanvas.width  = CONFIG.CANVAS_WIDTH;
-        this.staticCanvas.height = CONFIG.CANVAS_HEIGHT;
+        this.staticCanvas.width  = cw;
+        this.staticCanvas.height = ch;
         const sCtx = this.staticCanvas.getContext('2d');
 
         // Background
         sCtx.fillStyle = '#2d4a3e';
-        sCtx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+        sCtx.fillRect(0, 0, cw, ch);
 
         // Grid
         sCtx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
         sCtx.lineWidth = 1;
-        for (let x = 0; x <= CONFIG.CANVAS_WIDTH; x += 50) {
-            sCtx.beginPath(); sCtx.moveTo(x, 0); sCtx.lineTo(x, CONFIG.CANVAS_HEIGHT); sCtx.stroke();
+        for (let x = 0; x <= cw; x += 50) {
+            sCtx.beginPath(); sCtx.moveTo(x, 0); sCtx.lineTo(x, ch); sCtx.stroke();
         }
-        for (let y = 0; y <= CONFIG.CANVAS_HEIGHT; y += 50) {
-            sCtx.beginPath(); sCtx.moveTo(0, y); sCtx.lineTo(CONFIG.CANVAS_WIDTH, y); sCtx.stroke();
+        for (let y = 0; y <= ch; y += 50) {
+            sCtx.beginPath(); sCtx.moveTo(0, y); sCtx.lineTo(cw, y); sCtx.stroke();
         }
 
         // Slow-zone edge hatching
@@ -2568,10 +2641,10 @@ class Game {
         tCtx.beginPath(); tCtx.moveTo(0, 0); tCtx.lineTo(10, 0); tCtx.lineTo(0, 10); tCtx.fill();
         const pattern = sCtx.createPattern(tileCanvas, 'repeat');
         const edgeRects = [
-            [0, 0, CONFIG.CANVAS_WIDTH, edgeThreshold],
-            [0, CONFIG.CANVAS_HEIGHT - edgeThreshold, CONFIG.CANVAS_WIDTH, edgeThreshold],
-            [0, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2],
-            [CONFIG.CANVAS_WIDTH - edgeThreshold, edgeThreshold, edgeThreshold, CONFIG.CANVAS_HEIGHT - edgeThreshold * 2]
+            [0, 0, cw, edgeThreshold],
+            [0, ch - edgeThreshold, cw, edgeThreshold],
+            [0, edgeThreshold, edgeThreshold, ch - edgeThreshold * 2],
+            [cw - edgeThreshold, edgeThreshold, edgeThreshold, ch - edgeThreshold * 2]
         ];
         sCtx.fillStyle = pattern;
         for (const [x, y, w, h] of edgeRects) sCtx.fillRect(x, y, w, h);
