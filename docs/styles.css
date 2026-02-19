@@ -66,6 +66,22 @@ body {
     font-weight: bold;
 }
 
+.exit-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: bold;
+    background: rgba(136, 0, 0, 0.8);
+    color: #fff;
+    border: 2px solid #aa0000;
+    border-radius: 6px;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 0.2s;
+}
+.exit-btn:hover {
+    background: rgba(170, 0, 0, 1);
+}
+
 #health-hearts {
     display: flex;
     gap: 15px;

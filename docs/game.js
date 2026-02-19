@@ -1010,6 +1010,81 @@ class Game {
         document.getElementById('add-green-bot-btn').addEventListener('click', () => this.addBot(1));
         document.getElementById('add-red-bot-btn').addEventListener('click', () => this.addBot(2));
         document.getElementById('play-again-btn').addEventListener('click', () => this.playAgain());
+        document.getElementById('share-btn').addEventListener('click', () => this.copyShareLink());
+        document.getElementById('exit-game-btn').addEventListener('click', () => this.exitGame());
+
+        // Check for room code in URL and auto-join
+        this.checkUrlForRoom();
+    }
+
+    checkUrlForRoom() {
+        const params = new URLSearchParams(window.location.search);
+        const roomCode = params.get('room');
+        if (roomCode && roomCode.length === 6) {
+            // Clear URL param to prevent re-joining on refresh
+            window.history.replaceState({}, '', window.location.pathname);
+            // Auto-join after a short delay to let UI initialize
+            setTimeout(() => this.joinRoomDirect(roomCode.toUpperCase()), 100);
+        }
+    }
+
+    async joinRoomDirect(roomCode) {
+        const playerName = prompt('Enter your name to join room ' + roomCode + ':');
+        if (!playerName) return;
+
+        try {
+            this.networkManager = new NetworkManager();
+            await this.networkManager.connect();
+            this.setupNetworkHandlers();
+            this.networkManager.joinRoom(roomCode, playerName);
+        } catch (error) {
+            console.error('Failed to join room:', error);
+            alert('Failed to connect to server. Please try again.');
+        }
+    }
+
+    copyShareLink() {
+        const url = `${window.location.origin}${window.location.pathname}?room=${this.roomCode}`;
+        navigator.clipboard.writeText(url).then(() => {
+            const btn = document.getElementById('share-btn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Link Copied!';
+            btn.style.background = '#44aa44';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '#5865F2';
+            }, 2000);
+        }).catch(() => {
+            // Fallback: show URL in prompt
+            prompt('Copy this link:', url);
+        });
+    }
+
+    exitGame() {
+        if (!confirm('Are you sure you want to exit the game?')) return;
+
+        this.gameRunning = false;
+
+        // Disconnect from multiplayer if connected
+        if (this.networkManager) {
+            this.networkManager.leaveRoom();
+            this.networkManager.disconnect();
+            this.networkManager = null;
+        }
+
+        // Hide info panel if in multiplayer
+        document.getElementById('info-panel').classList.remove('in-game');
+
+        // Reset game state
+        this.gameMode = null;
+        this.tanks = [];
+        this.bullets = [];
+        this.particles = [];
+        this.powerups = [];
+        this.playerTank = null;
+
+        // Show main menu
+        this.showMainMenu();
     }
 
     generateObstacles(seed = Math.random()) {
