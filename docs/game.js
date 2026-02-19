@@ -646,16 +646,27 @@ class Tank {
         const sin = Math.sin(rad);
         ctx.setTransform(cos, sin, -sin, cos, this.x, this.y);
 
-        // Draw player indicator (glowing ring)
+        // Draw player indicator (layered rings for glow effect - no shadowBlur for performance)
         if (this.isPlayer) {
+            const baseR = CONFIG.TANK_SIZE / 2 + 15;
+            // Outer glow layers (cheap alternative to shadowBlur)
+            ctx.globalAlpha = 0.15;
             ctx.strokeStyle = '#ffff00';
-            ctx.lineWidth = 6;
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = '#ffff00';
+            ctx.lineWidth = 16;
             ctx.beginPath();
-            ctx.arc(0, 0, CONFIG.TANK_SIZE / 2 + 15, 0, Math.PI * 2);
+            ctx.arc(0, 0, baseR, 0, Math.PI * 2);
             ctx.stroke();
-            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 0.3;
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+            ctx.stroke();
+            // Core ring
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+            ctx.stroke();
         }
 
         // Draw tank body (rounded corners)
@@ -1476,14 +1487,27 @@ class Game {
 
     hideMenu() {
         document.getElementById('menu-overlay').classList.remove('active');
+        // Show info panel on left during multiplayer gameplay
+        if (this.gameMode === 'multiplayer') {
+            document.getElementById('info-panel').classList.add('in-game');
+        }
     }
 
     showMenu() {
         document.getElementById('menu-overlay').classList.add('active');
+        // Return info panel to menu position
+        document.getElementById('info-panel').classList.remove('in-game');
     }
 
     spawnParticles(x, y, color, count = 15) {
-        for (let i = 0; i < count; i++) {
+        // Reduce particle count in multiplayer for performance
+        const actualCount = this.gameMode === 'multiplayer' ? Math.ceil(count * 0.5) : count;
+        // Cap max active particles to prevent performance issues
+        const maxParticles = this.gameMode === 'multiplayer' ? 150 : 300;
+        const spawnCount = Math.min(actualCount, maxParticles - this.particles.length);
+        if (spawnCount <= 0) return;
+
+        for (let i = 0; i < spawnCount; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = 2 + Math.random() * 6;
             const vx = Math.cos(angle) * speed;

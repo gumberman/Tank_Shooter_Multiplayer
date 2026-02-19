@@ -298,6 +298,21 @@ body {
     max-height: 95vh;
 }
 
+/* Info panel in menu state: positioned to right of centered 420px menu */
+#menu-overlay.active ~ #info-panel:not(.in-game) {
+    position: fixed;
+    left: calc(50% + 230px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 101;
+    display: block;
+}
+
+/* Hide info panel when menu is hidden and not in-game mode */
+#info-panel:not(.in-game) {
+    display: none;
+}
+
 /* ── Floating info panel ── */
 #info-panel {
     background: rgba(30, 60, 114, 0.95);
@@ -310,6 +325,47 @@ body {
     overflow-y: auto;
     text-align: left;
     flex-shrink: 0;
+}
+
+/* In-game info panel (positioned on left during gameplay, below top bar) */
+#info-panel.in-game {
+    display: block;
+    position: fixed;
+    left: 15px;
+    bottom: 15px;
+    z-index: 50;
+    pointer-events: none;
+    background: rgba(30, 60, 114, 0.85);
+    padding: 18px 16px;
+    width: 240px;
+    max-height: calc(100vh - 120px);
+    font-size: 0.9em;
+}
+#info-panel.in-game .info-heading {
+    font-size: 10px;
+    margin-bottom: 10px;
+}
+#info-panel.in-game .kbd {
+    min-width: 28px;
+    height: 28px;
+    font-size: 11px;
+}
+#info-panel.in-game .kbd-space {
+    min-width: 90px;
+}
+#info-panel.in-game .tips-list li {
+    font-size: 12px;
+    padding: 4px 0 4px 14px;
+}
+#info-panel.in-game .pu-icon {
+    width: 32px;
+    height: 32px;
+}
+#info-panel.in-game .pu-text strong {
+    font-size: 12px;
+}
+#info-panel.in-game .pu-text span {
+    font-size: 11px;
 }
 
 .info-section {

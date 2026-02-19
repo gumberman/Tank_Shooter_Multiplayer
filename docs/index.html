@@ -76,99 +76,99 @@
                     </div>
                 </div>
 
-                <!-- Floating info panel to the right of the main menu -->
-                <div id="info-panel">
-
-                    <div class="info-section">
-                        <h3 class="info-heading">Controls</h3>
-                        <div class="key-clusters">
-                            <div class="wasd-cluster">
-                                <div class="wasd-top-row">
-                                    <span class="kbd">W</span>
-                                </div>
-                                <div class="wasd-bot-row">
-                                    <span class="kbd">A</span>
-                                    <span class="kbd">S</span>
-                                    <span class="kbd">D</span>
-                                </div>
-                            </div>
-                            <div class="keys-or">or</div>
-                            <div class="wasd-cluster">
-                                <div class="wasd-top-row">
-                                    <span class="kbd">↑</span>
-                                </div>
-                                <div class="wasd-bot-row">
-                                    <span class="kbd">←</span>
-                                    <span class="kbd">↓</span>
-                                    <span class="kbd">→</span>
-                                </div>
-                            </div>
-                        </div>
-                        <p class="ctrl-label">Move &amp; Turn</p>
-                        <div class="space-row">
-                            <span class="kbd kbd-space">SPACE</span>
-                            <span class="ctrl-label" style="margin:0">Shoot</span>
-                        </div>
-                    </div>
-
-                    <div class="info-section">
-                        <h3 class="info-heading">How to Play</h3>
-                        <ul class="tips-list">
-                            <li>First team to <strong>24 kills</strong> wins</li>
-                            <li>Pick up glowing orbs for <strong>temporary power-ups</strong></li>
-                        </ul>
-                    </div>
-
-                    <div class="info-section">
-                        <h3 class="info-heading">Power-Ups</h3>
-
-                        <div class="pu-row">
-                            <div class="pu-icon" style="background:#ffdd00">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
-                                    <path d="M4.24,9.19 A7,7,0,0,1,17.76,9.19" stroke="rgba(0,0,0,0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-                                    <polygon points="17.76,9.19 18.56,6.38 15.66,7.16" fill="rgba(0,0,0,0.75)"/>
-                                    <path d="M17.76,12.81 A7,7,0,0,1,4.24,12.81" stroke="rgba(0,0,0,0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-                                    <polygon points="4.24,12.81 3.44,15.62 6.34,14.84" fill="rgba(0,0,0,0.75)"/>
-                                </svg>
-                            </div>
-                            <div class="pu-text">
-                                <strong>Fast Reload</strong>
-                                <span>Fire over 2× faster for 8 s</span>
-                            </div>
-                        </div>
-
-                        <div class="pu-row">
-                            <div class="pu-icon" style="background:#00aaff">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
-                                    <polygon points="7,5 21,5 15,17 1,17" fill="rgba(0,0,0,0.75)"/>
-                                </svg>
-                            </div>
-                            <div class="pu-text">
-                                <strong>Speed Boost</strong>
-                                <span>Move &amp; turn 60% faster for 8 s</span>
-                            </div>
-                        </div>
-
-                        <div class="pu-row">
-                            <div class="pu-icon" style="background:#ff6600">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" viewBox="0 0 26 14">
-                                    <circle cx="3" cy="7" r="2.2" fill="rgba(0,0,0,0.75)"/>
-                                    <circle cx="13" cy="7" r="3" fill="rgba(0,0,0,0.75)"/>
-                                    <circle cx="23" cy="7" r="4" fill="rgba(0,0,0,0.75)"/>
-                                </svg>
-                            </div>
-                            <div class="pu-text">
-                                <strong>Big Shots</strong>
-                                <span>Double damage — kills in 2 hits for 8 s</span>
-                            </div>
-                        </div>
-
-                    </div>
-
-                </div><!-- /#info-panel -->
-
             </div><!-- /#menu-layout -->
         </div>
+
+        <!-- Info panel (outside menu-overlay so it can persist during gameplay) -->
+        <div id="info-panel">
+
+            <div class="info-section">
+                <h3 class="info-heading">Controls</h3>
+                <div class="key-clusters">
+                    <div class="wasd-cluster">
+                        <div class="wasd-top-row">
+                            <span class="kbd">W</span>
+                        </div>
+                        <div class="wasd-bot-row">
+                            <span class="kbd">A</span>
+                            <span class="kbd">S</span>
+                            <span class="kbd">D</span>
+                        </div>
+                    </div>
+                    <div class="keys-or">or</div>
+                    <div class="wasd-cluster">
+                        <div class="wasd-top-row">
+                            <span class="kbd">↑</span>
+                        </div>
+                        <div class="wasd-bot-row">
+                            <span class="kbd">←</span>
+                            <span class="kbd">↓</span>
+                            <span class="kbd">→</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="ctrl-label">Move &amp; Turn</p>
+                <div class="space-row">
+                    <span class="kbd kbd-space">SPACE</span>
+                    <span class="ctrl-label" style="margin:0">Shoot</span>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h3 class="info-heading">How to Play</h3>
+                <ul class="tips-list">
+                    <li>First team to <strong>24 kills</strong> wins</li>
+                    <li>Pick up glowing orbs for <strong>temporary power-ups</strong></li>
+                </ul>
+            </div>
+
+            <div class="info-section">
+                <h3 class="info-heading">Power-Ups</h3>
+
+                <div class="pu-row">
+                    <div class="pu-icon" style="background:#ffdd00">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+                            <path d="M4.24,9.19 A7,7,0,0,1,17.76,9.19" stroke="rgba(0,0,0,0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+                            <polygon points="17.76,9.19 18.56,6.38 15.66,7.16" fill="rgba(0,0,0,0.75)"/>
+                            <path d="M17.76,12.81 A7,7,0,0,1,4.24,12.81" stroke="rgba(0,0,0,0.75)" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+                            <polygon points="4.24,12.81 3.44,15.62 6.34,14.84" fill="rgba(0,0,0,0.75)"/>
+                        </svg>
+                    </div>
+                    <div class="pu-text">
+                        <strong>Fast Reload</strong>
+                        <span>Fire over 2× faster for 8 s</span>
+                    </div>
+                </div>
+
+                <div class="pu-row">
+                    <div class="pu-icon" style="background:#00aaff">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+                            <polygon points="7,5 21,5 15,17 1,17" fill="rgba(0,0,0,0.75)"/>
+                        </svg>
+                    </div>
+                    <div class="pu-text">
+                        <strong>Speed Boost</strong>
+                        <span>Move &amp; turn 60% faster for 8 s</span>
+                    </div>
+                </div>
+
+                <div class="pu-row">
+                    <div class="pu-icon" style="background:#ff6600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="14" viewBox="0 0 26 14">
+                            <circle cx="3" cy="7" r="2.2" fill="rgba(0,0,0,0.75)"/>
+                            <circle cx="13" cy="7" r="3" fill="rgba(0,0,0,0.75)"/>
+                            <circle cx="23" cy="7" r="4" fill="rgba(0,0,0,0.75)"/>
+                        </svg>
+                    </div>
+                    <div class="pu-text">
+                        <strong>Big Shots</strong>
+                        <span>Double damage — kills in 2 hits for 8 s</span>
+                    </div>
+                </div>
+
+            </div>
+
+        </div><!-- /#info-panel -->
 
         <div id="game-over-overlay" style="display: none;">
             <div id="game-over-menu">
