@@ -243,12 +243,22 @@ class GameServer {
         const slideX = wrapPosition(tank.x + dx * slideFriction, CONFIG.CANVAS_WIDTH);
         if (Math.abs(dx) > 0.1 && this.canMoveTo(slideX, tank.y, tank.id)) {
             tank.x = slideX;
-            // Mark tank as sliding - steer AWAY from wall at 45° angle
             tank.slidingUntil = now + 1000;
-            // Wall is blocking Y movement. Steer away: if wanted south (dy>0), wall is south, steer NE/NW
-            // If wanted north (dy<0), wall is north, steer SE/SW
-            const awayFromWall = dy > 0 ? -45 : 45; // North or South offset
-            tank.slideAngle = (dx > 0 ? 0 : 180) + awayFromWall;
+
+            // Smart escape angle based on tank's heading and wall direction
+            // Wall is blocking Y movement - we slide along X
+            const slideDir = dx > 0 ? 0 : 180; // Base X direction (east or west)
+
+            // How much was tank heading into the wall vs along it? (0 to 1)
+            const totalMovement = Math.abs(dx) + Math.abs(dy) + 0.01;
+            const wallPenetration = Math.abs(dy) / totalMovement;
+
+            // Steer away more aggressively if heading more directly into wall
+            // Range: 25° (glancing) to 65° (head-on)
+            const escapeStrength = 25 + wallPenetration * 40;
+            const awayFromWall = dy > 0 ? -escapeStrength : escapeStrength;
+
+            tank.slideAngle = slideDir + awayFromWall;
             return;
         }
 
@@ -256,12 +266,21 @@ class GameServer {
         const slideY = wrapPosition(tank.y + dy * slideFriction, CONFIG.CANVAS_HEIGHT);
         if (Math.abs(dy) > 0.1 && this.canMoveTo(tank.x, slideY, tank.id)) {
             tank.y = slideY;
-            // Mark tank as sliding - steer AWAY from wall at 45° angle
             tank.slidingUntil = now + 1000;
-            // Wall is blocking X movement. Steer away: if wanted east (dx>0), wall is east, steer NW/SW
-            // If wanted west (dx<0), wall is west, steer NE/SE
-            const awayFromWall = dx > 0 ? -45 : 45; // West or East offset
-            tank.slideAngle = (dy > 0 ? 90 : -90) + awayFromWall;
+
+            // Smart escape angle based on tank's heading and wall direction
+            // Wall is blocking X movement - we slide along Y
+            const slideDir = dy > 0 ? 90 : -90; // Base Y direction (south or north)
+
+            // How much was tank heading into the wall vs along it? (0 to 1)
+            const totalMovement = Math.abs(dx) + Math.abs(dy) + 0.01;
+            const wallPenetration = Math.abs(dx) / totalMovement;
+
+            // Steer away more aggressively if heading more directly into wall
+            const escapeStrength = 25 + wallPenetration * 40;
+            const awayFromWall = dx > 0 ? -escapeStrength : escapeStrength;
+
+            tank.slideAngle = slideDir + awayFromWall;
         }
     }
 
