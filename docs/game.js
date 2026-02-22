@@ -997,6 +997,18 @@ class Game {
             this.keys[e.key] = false;
         });
 
+        // Clear all keys when window loses focus (prevents stuck keys)
+        window.addEventListener('blur', () => {
+            this.keys = {};
+        });
+
+        // Also clear keys when visibility changes (tab switch)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.keys = {};
+            }
+        });
+
         // Menu buttons
         document.getElementById('practice-btn').addEventListener('click', () => this.startPractice());
         document.getElementById('create-game-btn').addEventListener('click', () => this.createMultiplayerGame());

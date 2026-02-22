@@ -99,11 +99,14 @@ class GameServer {
         this.tick++;
         const now = Date.now();
 
-        // Process player inputs - drain all buffered inputs per tick
+        // Process player inputs - only use LATEST input per player per tick
+        // This ensures all players move at the same rate regardless of frame rate
         for (const [playerId, inputs] of this.inputBuffers.entries()) {
-            while (inputs.length > 0) {
-                const input = inputs.shift();
-                this.processInput(playerId, input);
+            if (inputs.length > 0) {
+                // Take only the most recent input, discard older ones
+                const latestInput = inputs[inputs.length - 1];
+                inputs.length = 0; // Clear buffer
+                this.processInput(playerId, latestInput);
             }
         }
 
