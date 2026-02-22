@@ -234,11 +234,14 @@ class GameServer {
 
         // Wall sliding with friction (40% of normal speed)
         const slideFriction = 0.4;
+        const now = Date.now();
 
         // Wall sliding: try X-only movement with friction
         const slideX = wrapPosition(tank.x + dx * slideFriction, CONFIG.CANVAS_WIDTH);
         if (Math.abs(dx) > 0.1 && this.canMoveTo(slideX, tank.y, tank.id)) {
             tank.x = slideX;
+            // Mark tank as sliding (for bot AI)
+            tank.slidingUntil = now + 1000;
             return;
         }
 
@@ -246,6 +249,8 @@ class GameServer {
         const slideY = wrapPosition(tank.y + dy * slideFriction, CONFIG.CANVAS_HEIGHT);
         if (Math.abs(dy) > 0.1 && this.canMoveTo(tank.x, slideY, tank.id)) {
             tank.y = slideY;
+            // Mark tank as sliding (for bot AI)
+            tank.slidingUntil = now + 1000;
         }
     }
 

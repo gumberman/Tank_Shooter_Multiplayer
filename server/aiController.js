@@ -68,18 +68,22 @@ class AIController {
     getInput(bot, allTanks, bullets, obstacles, powerups = []) {
         const input = { w: true, a: false, s: false, d: false, space: false };
 
+        // Check if bot is currently wall sliding - commit to direction, don't turn
+        const now = Date.now();
+        const isSliding = bot.slidingUntil && now < bot.slidingUntil;
+
         const target = this.findNearestEnemy(bot, allTanks);
         if (!target) {
             // No enemy, just keep moving forward
             return input;
         }
 
-        // Navigate toward target
+        // Navigate toward target (but not while sliding)
         const angleToTarget = this.wrappedAngle(bot.x, bot.y, target.x, target.y);
         const angleDiff = angleDifference(bot.rotation, angleToTarget);
 
-        // Rotate toward target
-        if (Math.abs(angleDiff) > 5) {
+        // Only rotate if not sliding along a wall
+        if (!isSliding && Math.abs(angleDiff) > 5) {
             if (angleDiff > 0) {
                 input.d = true;
             } else {
@@ -98,7 +102,7 @@ class AIController {
             }
         }
 
-        // Dodge incoming bullets (temporarily stop forward movement)
+        // Dodge incoming bullets (override sliding behavior for survival)
         const threatBullet = this.findThreatBullet(bot, bullets);
         if (threatBullet) {
             // Dodge away from bullet
