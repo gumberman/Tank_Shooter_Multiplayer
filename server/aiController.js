@@ -3,13 +3,14 @@ const { normalizeAngle, angleDifference } = require('../shared/gameLogic');
 
 /**
  * Simplified AI Controller for server-side bots
- * Includes wall avoidance and stuck detection
+ * Includes wall avoidance optimized for axis-aligned rectangular obstacles
  */
 class AIController {
     constructor() {
         this.lastInputs = new Map(); // botId -> last input state
         this.positionHistory = new Map(); // botId -> [{x, y, time}]
         this.stuckState = new Map(); // botId -> {isStuck, escapeDir, escapeUntil}
+        this.wallSlideState = new Map(); // botId -> {slideAngle, slideUntil}
     }
 
     /**
@@ -29,7 +30,6 @@ class AIController {
     wrappedAngle(fromX, fromY, toX, toY) {
         let dx = toX - fromX;
         let dy = toY - fromY;
-        // Take shortest path through map wrapping
         if (dx > CONFIG.CANVAS_WIDTH / 2) dx -= CONFIG.CANVAS_WIDTH;
         if (dx < -CONFIG.CANVAS_WIDTH / 2) dx += CONFIG.CANVAS_WIDTH;
         if (dy > CONFIG.CANVAS_HEIGHT / 2) dy -= CONFIG.CANVAS_HEIGHT;
@@ -45,10 +45,10 @@ class AIController {
     }
 
     /**
-     * Check if a point is inside an obstacle (with padding)
+     * Check if a point collides with an obstacle (with tank size padding)
      */
-    pointInObstacle(x, y, obstacles, padding = 0) {
-        const halfTank = CONFIG.TANK_SIZE / 2 + padding;
+    pointHitsObstacle(x, y, obstacles) {
+        const halfTank = CONFIG.TANK_SIZE / 2;
         for (const obs of obstacles) {
             if (x + halfTank > obs.x &&
                 x - halfTank < obs.x + obs.width &&
@@ -61,69 +61,83 @@ class AIController {
     }
 
     /**
-     * Cast a ray from bot and check for obstacle collision
-     * Returns distance to obstacle or Infinity if clear
+     * Find obstacle blocking the path ahead (checks along bot's forward direction)
      */
-    raycastToObstacle(x, y, angle, maxDist, obstacles) {
-        const rad = angle * Math.PI / 180;
-        const stepSize = 20;
-        const steps = Math.ceil(maxDist / stepSize);
-
-        for (let i = 1; i <= steps; i++) {
-            const dist = i * stepSize;
-            const checkX = x + Math.cos(rad) * dist;
-            const checkY = y + Math.sin(rad) * dist;
-
-            if (this.pointInObstacle(checkX, checkY, obstacles)) {
-                return dist;
-            }
-        }
-        return Infinity;
+    findObstacleAhead(bot, obstacles, lookAhead = 80) {
+        const rad = bot.rotation * Math.PI / 180;
+        const checkX = bot.x + Math.cos(rad) * lookAhead;
+        const checkY = bot.y + Math.sin(rad) * lookAhead;
+        return this.pointHitsObstacle(checkX, checkY, obstacles);
     }
 
     /**
-     * Check for walls using feelers (rays cast in multiple directions)
-     * Returns steering suggestion: -1 (turn left), 0 (clear), 1 (turn right)
+     * For axis-aligned obstacles: determine slide direction to go around
+     * Returns an absolute angle to slide along the wall toward the target
      */
-    checkWallFeelers(bot, obstacles) {
-        const feelerDist = 100; // How far ahead to look
-        const feelerAngles = [-45, -20, 0, 20, 45]; // Angles relative to bot rotation
+    getWallSlideAngle(bot, obstacle, targetX, targetY) {
+        const halfTank = CONFIG.TANK_SIZE / 2;
 
-        let leftBlocked = 0;
-        let rightBlocked = 0;
-        let frontBlocked = false;
+        // Obstacle bounds with tank padding
+        const obsLeft = obstacle.x - halfTank;
+        const obsRight = obstacle.x + obstacle.width + halfTank;
+        const obsTop = obstacle.y - halfTank;
+        const obsBottom = obstacle.y + obstacle.height + halfTank;
 
-        for (const relAngle of feelerAngles) {
-            const absAngle = bot.rotation + relAngle;
-            const dist = this.raycastToObstacle(bot.x, bot.y, absAngle, feelerDist, obstacles);
+        // Determine which face we're approaching based on bot position relative to obstacle center
+        const obsCenterX = obstacle.x + obstacle.width / 2;
+        const obsCenterY = obstacle.y + obstacle.height / 2;
 
-            if (dist < feelerDist) {
-                // Weight by how close the obstacle is
-                const weight = 1 - (dist / feelerDist);
+        // Calculate overlap to determine primary blocking axis
+        const overlapX = Math.min(bot.x, obsRight) - Math.max(bot.x, obsLeft);
+        const overlapY = Math.min(bot.y, obsBottom) - Math.max(bot.y, obsTop);
 
-                if (relAngle < -10) {
-                    leftBlocked += weight;
-                } else if (relAngle > 10) {
-                    rightBlocked += weight;
-                } else {
-                    frontBlocked = true;
-                }
-            }
+        // Determine if we're hitting a vertical face (left/right) or horizontal face (top/bottom)
+        const hittingVerticalFace = bot.x < obsLeft || bot.x > obsRight ||
+            (overlapX < overlapY && (bot.x < obsCenterX || bot.x > obsCenterX));
+
+        if (bot.x < obsCenterX && (hittingVerticalFace || overlapY > overlapX)) {
+            // Approaching from left - slide up or down
+            return targetY < bot.y ? -90 : 90; // -90 = up, 90 = down
+        } else if (bot.x > obsCenterX && (hittingVerticalFace || overlapY > overlapX)) {
+            // Approaching from right - slide up or down
+            return targetY < bot.y ? -90 : 90;
+        } else if (bot.y < obsCenterY) {
+            // Approaching from top - slide left or right
+            return targetX < bot.x ? 180 : 0; // 180 = left, 0 = right
+        } else {
+            // Approaching from bottom - slide left or right
+            return targetX < bot.x ? 180 : 0;
+        }
+    }
+
+    /**
+     * Update wall slide state - commits to a slide direction briefly to avoid jitter
+     */
+    updateWallSlide(bot, obstacle, targetX, targetY) {
+        const now = Date.now();
+        let slideState = this.wallSlideState.get(bot.id);
+
+        if (!slideState) {
+            slideState = { slideAngle: null, slideUntil: 0 };
+            this.wallSlideState.set(bot.id, slideState);
         }
 
-        // If front is blocked, suggest turning toward less blocked side
-        if (frontBlocked || leftBlocked > 0.3 || rightBlocked > 0.3) {
-            if (leftBlocked < rightBlocked) {
-                return -1; // Turn left
-            } else if (rightBlocked < leftBlocked) {
-                return 1; // Turn right
-            } else {
-                // Both sides equally blocked, pick randomly but consistently
-                return (bot.id.charCodeAt(0) % 2 === 0) ? -1 : 1;
-            }
+        // If currently sliding and time hasn't expired, continue
+        if (slideState.slideAngle !== null && now < slideState.slideUntil) {
+            return slideState.slideAngle;
         }
 
-        return 0; // Clear ahead
+        // If obstacle detected, start or refresh slide
+        if (obstacle) {
+            const slideAngle = this.getWallSlideAngle(bot, obstacle, targetX, targetY);
+            slideState.slideAngle = slideAngle;
+            slideState.slideUntil = now + 300; // Commit to direction for 300ms
+            return slideAngle;
+        }
+
+        // No obstacle, clear slide state
+        slideState.slideAngle = null;
+        return null;
     }
 
     /**
@@ -131,48 +145,40 @@ class AIController {
      */
     updateStuckDetection(bot) {
         const now = Date.now();
-        const historyWindow = 1500; // Check movement over 1.5 seconds
-        const stuckThreshold = 15; // Must move at least 15px in that time
-        const escapeTime = 500; // How long to execute escape maneuver
+        const historyWindow = 1500;
+        const stuckThreshold = 15;
+        const escapeTime = 500;
 
-        // Get or create position history
         let history = this.positionHistory.get(bot.id);
         if (!history) {
             history = [];
             this.positionHistory.set(bot.id, history);
         }
 
-        // Add current position
         history.push({ x: bot.x, y: bot.y, time: now });
 
-        // Remove old entries
         while (history.length > 0 && now - history[0].time > historyWindow) {
             history.shift();
         }
 
-        // Check stuck state
         let stuckState = this.stuckState.get(bot.id);
         if (!stuckState) {
             stuckState = { isStuck: false, escapeDir: 1, escapeUntil: 0 };
             this.stuckState.set(bot.id, stuckState);
         }
 
-        // If currently escaping, check if escape time is over
         if (stuckState.isStuck && now > stuckState.escapeUntil) {
             stuckState.isStuck = false;
         }
 
-        // If not escaping, check if we're stuck
         if (!stuckState.isStuck && history.length >= 2) {
             const oldest = history[0];
             const totalMovement = this.directDist(oldest.x, oldest.y, bot.x, bot.y);
 
             if (totalMovement < stuckThreshold && now - oldest.time >= historyWindow * 0.8) {
-                // We're stuck! Start escape maneuver
                 stuckState.isStuck = true;
                 stuckState.escapeDir = Math.random() > 0.5 ? 1 : -1;
                 stuckState.escapeUntil = now + escapeTime;
-                // Clear history so we don't immediately re-trigger
                 history.length = 0;
             }
         }
@@ -182,25 +188,13 @@ class AIController {
 
     /**
      * Get input for a bot
-     * @param {object} bot - The bot tank
-     * @param {array} allTanks - All tanks in game
-     * @param {array} bullets - All bullets in game
-     * @param {array} obstacles - All obstacles
-     * @returns {object} Input state {w, a, s, d, space}
      */
     getInput(bot, allTanks, bullets, obstacles) {
-        const input = {
-            w: false,
-            a: false,
-            s: false,
-            d: false,
-            space: false
-        };
+        const input = { w: false, a: false, s: false, d: false, space: false };
 
-        // Check if bot is stuck and needs escape maneuver
+        // Check if bot is stuck
         const stuckState = this.updateStuckDetection(bot);
         if (stuckState.isStuck) {
-            // Escape: just turn sharply (no reversing - it's a disadvantage)
             if (stuckState.escapeDir > 0) {
                 input.d = true;
             } else {
@@ -209,74 +203,69 @@ class AIController {
             return input;
         }
 
-        // Check wall feelers for obstacle avoidance
-        const wallSteering = this.checkWallFeelers(bot, obstacles);
-
-        // Find nearest enemy (wrapping-aware)
+        // Find nearest enemy
         const nearestEnemy = this.findNearestEnemy(bot, allTanks);
+        const targetX = nearestEnemy ? nearestEnemy.x : bot.x + Math.cos(bot.rotation * Math.PI / 180) * 100;
+        const targetY = nearestEnemy ? nearestEnemy.y : bot.y + Math.sin(bot.rotation * Math.PI / 180) * 100;
 
-        if (!nearestEnemy) {
-            // No enemy, move forward but avoid walls
-            if (wallSteering !== 0) {
-                if (wallSteering < 0) {
-                    input.a = true;
-                } else {
+        // Check for obstacle ahead
+        const obstacleAhead = this.findObstacleAhead(bot, obstacles);
+        const slideAngle = this.updateWallSlide(bot, obstacleAhead, targetX, targetY);
+
+        if (slideAngle !== null) {
+            // Wall sliding: turn toward slide angle and move forward
+            const angleDiff = angleDifference(bot.rotation, slideAngle);
+
+            if (Math.abs(angleDiff) > 10) {
+                if (angleDiff > 0) {
                     input.d = true;
+                } else {
+                    input.a = true;
                 }
             }
             input.w = true;
-            return input;
-        }
+        } else if (nearestEnemy) {
+            // Normal enemy pursuit
+            const angleToEnemy = this.wrappedAngle(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
+            const angleDiff = angleDifference(bot.rotation, angleToEnemy);
 
-        // Navigate using shortest wrapped path angle
-        const angleToEnemy = this.wrappedAngle(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
-        const angleDiff = angleDifference(bot.rotation, angleToEnemy);
-
-        // Wall avoidance takes priority over enemy pursuit
-        if (wallSteering !== 0) {
-            // Wall ahead - turn away from it
-            if (wallSteering < 0) {
-                input.a = true;
-            } else {
-                input.d = true;
-            }
-            // Still try to move, but slower (not full forward)
-            input.w = true;
-        } else {
-            // No wall - normal enemy pursuit
-            // Rotate toward enemy
             if (Math.abs(angleDiff) > 5) {
                 if (angleDiff > 0) {
-                    input.d = true; // Turn right
+                    input.d = true;
                 } else {
-                    input.a = true; // Turn left
+                    input.a = true;
                 }
             }
 
-            // Move forward if roughly facing enemy
             if (Math.abs(angleDiff) < 45) {
                 input.w = true;
             }
-        }
 
-        // Shoot only if enemy is reachable via direct path (bullets don't wrap)
-        const directDist = this.directDist(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
-        if (Math.abs(angleDiff) < 30 && directDist < 900) {
-            // Check if clear shot on direct path
-            if (this.hasClearShot(bot, nearestEnemy, obstacles)) {
-                input.space = true;
+            // Shooting
+            const directDist = this.directDist(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
+            if (Math.abs(angleDiff) < 30 && directDist < 900) {
+                if (this.hasClearShot(bot, nearestEnemy, obstacles)) {
+                    input.space = true;
+                }
             }
+        } else {
+            // No enemy, just move forward
+            input.w = true;
         }
 
-        // Dodge incoming bullets (overrides other movement but not shooting)
+        // Dodge incoming bullets
         const threatBullet = this.findThreatBullet(bot, bullets);
         if (threatBullet) {
-            // Try to turn perpendicular to bullet direction (no reversing)
             input.w = false;
-            if (Math.random() > 0.5) {
+            // Consistent dodge direction based on bullet position
+            const bulletSide = (threatBullet.x - bot.x) * Math.sin(bot.rotation * Math.PI / 180) -
+                               (threatBullet.y - bot.y) * Math.cos(bot.rotation * Math.PI / 180);
+            if (bulletSide > 0) {
                 input.a = true;
+                input.d = false;
             } else {
                 input.d = true;
+                input.a = false;
             }
         }
 
@@ -306,20 +295,19 @@ class AIController {
     }
 
     /**
-     * Check if bot has clear shot to target (direct path, no wrapping - bullets don't wrap)
+     * Check if bot has clear shot to target
      */
     hasClearShot(bot, target, obstacles) {
         const dx = target.x - bot.x;
         const dy = target.y - bot.y;
         const dist = Math.hypot(dx, dy);
-        const steps = Math.ceil(dist / 50); // Check every 50px
+        const steps = Math.ceil(dist / 50);
 
         for (let i = 1; i < steps; i++) {
             const t = i / steps;
             const checkX = bot.x + dx * t;
             const checkY = bot.y + dy * t;
 
-            // Check if this point intersects any obstacle
             for (const obs of obstacles) {
                 if (checkX > obs.x && checkX < obs.x + obs.width &&
                     checkY > obs.y && checkY < obs.y + obs.height) {
@@ -340,7 +328,6 @@ class AIController {
 
             const dist = Math.hypot(bullet.x - bot.x, bullet.y - bot.y);
             if (dist < 200) {
-                // Check if bullet is heading toward bot
                 const toBotAngle = Math.atan2(bot.y - bullet.y, bot.x - bullet.x) * 180 / Math.PI;
                 const bulletAngle = Math.atan2(bullet.vy, bullet.vx) * 180 / Math.PI;
                 const angleDiff = Math.abs(angleDifference(bulletAngle, toBotAngle));
@@ -355,12 +342,13 @@ class AIController {
     }
 
     /**
-     * Clean up state for a bot (call when bot is removed)
+     * Clean up state for a bot
      */
     removeBot(botId) {
         this.lastInputs.delete(botId);
         this.positionHistory.delete(botId);
         this.stuckState.delete(botId);
+        this.wallSlideState.delete(botId);
     }
 }
 
