@@ -209,7 +209,7 @@ class GameServer {
     }
 
     /**
-     * Move tank forward or backward - matches client physics exactly
+     * Move tank forward or backward - with wall sliding
      */
     moveTank(tank, direction) {
         const rad = tank.rotation * Math.PI / 180;
@@ -218,17 +218,31 @@ class GameServer {
         const speed = direction === 1
             ? CONFIG.TANK_SPEED * speedModifier * speedMultiplier
             : CONFIG.TANK_SPEED * 0.65 * speedModifier * speedMultiplier;
-        let newX = tank.x + Math.cos(rad) * speed * direction;
-        let newY = tank.y + Math.sin(rad) * speed * direction;
 
-        // Wraparound at edges
-        newX = wrapPosition(newX, CONFIG.CANVAS_WIDTH);
-        newY = wrapPosition(newY, CONFIG.CANVAS_HEIGHT);
+        const dx = Math.cos(rad) * speed * direction;
+        const dy = Math.sin(rad) * speed * direction;
 
-        // Check collisions
+        let newX = wrapPosition(tank.x + dx, CONFIG.CANVAS_WIDTH);
+        let newY = wrapPosition(tank.y + dy, CONFIG.CANVAS_HEIGHT);
+
+        // Try full movement first
         if (this.canMoveTo(newX, newY, tank.id)) {
             tank.x = newX;
             tank.y = newY;
+            return;
+        }
+
+        // Wall sliding: try X-only movement
+        const slideX = wrapPosition(tank.x + dx, CONFIG.CANVAS_WIDTH);
+        if (Math.abs(dx) > 0.1 && this.canMoveTo(slideX, tank.y, tank.id)) {
+            tank.x = slideX;
+            return;
+        }
+
+        // Wall sliding: try Y-only movement
+        const slideY = wrapPosition(tank.y + dy, CONFIG.CANVAS_HEIGHT);
+        if (Math.abs(dy) > 0.1 && this.canMoveTo(tank.x, slideY, tank.id)) {
+            tank.y = slideY;
         }
     }
 
