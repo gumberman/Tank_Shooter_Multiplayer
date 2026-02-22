@@ -151,12 +151,13 @@ class GameServer {
 
         const { w, a, s, d, space } = input.input;
 
-        // Rotation (speed boost also doubles turn rate)
+        // Rotation (speed boost doubles turn rate, firing penalty slows it)
         // Reverse controls when moving backward (like a car)
         const now2 = Date.now();
         const hasSpeedBoost = tank.activePowerups &&
             tank.activePowerups.some(p => p.type === 'SPEED_BOOST' && p.expiresAt > now2);
-        const turnSpeed = CONFIG.ROTATION_SPEED * (hasSpeedBoost ? 2 : 1);
+        const firingPenalty = this.getFiringPenalty(tank);
+        const turnSpeed = CONFIG.ROTATION_SPEED * (hasSpeedBoost ? 2 : 1) * firingPenalty;
         const movingBackward = s && !w;
         if (a) {
             if (movingBackward) {
@@ -200,15 +201,37 @@ class GameServer {
     }
 
     /**
+     * Get firing penalty multiplier (40% slowdown decaying over 750ms after shooting)
+     */
+    getFiringPenalty(tank) {
+        const now = Date.now();
+        const timeSinceShot = now - (tank.lastShot || 0);
+        const PENALTY_DURATION = 750; // ms
+        const MAX_PENALTY = 0.4; // 40% reduction
+
+        if (timeSinceShot >= PENALTY_DURATION) {
+            return 1.0; // No penalty
+        }
+        // Linear decay from 0.6 to 1.0 over 750ms
+        return 0.6 + (MAX_PENALTY * (timeSinceShot / PENALTY_DURATION));
+    }
+
+    /**
      * Get speed multiplier from active powerups
      */
     getSpeedMultiplier(tank) {
         const now = Date.now();
+        let multiplier = 1.0;
+
+        // Apply firing penalty
+        multiplier *= this.getFiringPenalty(tank);
+
+        // Apply speed boost powerup
         if (tank.activePowerups) {
             const boost = tank.activePowerups.find(p => p.type === 'SPEED_BOOST' && p.expiresAt > now);
-            if (boost) return CONFIG.SPEED_BOOST_MULTIPLIER;
+            if (boost) multiplier *= CONFIG.SPEED_BOOST_MULTIPLIER;
         }
-        return 1.0;
+        return multiplier;
     }
 
     /**
