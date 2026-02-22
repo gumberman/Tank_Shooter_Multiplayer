@@ -131,9 +131,9 @@ class AIController {
      */
     updateStuckDetection(bot) {
         const now = Date.now();
-        const historyWindow = 1000; // Check movement over 1 second
-        const stuckThreshold = 30; // Must move at least 30px in that time
-        const escapeTime = 800; // How long to execute escape maneuver
+        const historyWindow = 1500; // Check movement over 1.5 seconds
+        const stuckThreshold = 15; // Must move at least 15px in that time
+        const escapeTime = 500; // How long to execute escape maneuver
 
         // Get or create position history
         let history = this.positionHistory.get(bot.id);
@@ -200,8 +200,7 @@ class AIController {
         // Check if bot is stuck and needs escape maneuver
         const stuckState = this.updateStuckDetection(bot);
         if (stuckState.isStuck) {
-            // Escape: reverse and turn
-            input.s = true;
+            // Escape: just turn sharply (no reversing - it's a disadvantage)
             if (stuckState.escapeDir > 0) {
                 input.d = true;
             } else {
@@ -272,9 +271,8 @@ class AIController {
         // Dodge incoming bullets (overrides other movement but not shooting)
         const threatBullet = this.findThreatBullet(bot, bullets);
         if (threatBullet) {
-            // Try to move perpendicular to bullet direction
+            // Try to turn perpendicular to bullet direction (no reversing)
             input.w = false;
-            input.s = true; // Back up from threat
             if (Math.random() > 0.5) {
                 input.a = true;
             } else {
