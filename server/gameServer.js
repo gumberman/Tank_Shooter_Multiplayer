@@ -110,6 +110,9 @@ class GameServer {
         // Update AI bots
         this.updateBots();
 
+        // Push overlapping tanks apart
+        this.pushTanksApart();
+
         // Update respawn timers
         this.updateRespawnTimers();
 
@@ -345,6 +348,68 @@ class GameServer {
                 this.respawnTank(tank);
             }
         }
+    }
+
+    /**
+     * Push overlapping tanks apart gently
+     */
+    pushTanksApart() {
+        const tanks = Array.from(this.tanks.values()).filter(t => !t.respawning);
+        const pushStrength = 2; // Pixels per frame to push apart
+        const minDist = CONFIG.TANK_SIZE;
+
+        for (let i = 0; i < tanks.length; i++) {
+            for (let j = i + 1; j < tanks.length; j++) {
+                const tankA = tanks[i];
+                const tankB = tanks[j];
+
+                const dx = tankB.x - tankA.x;
+                const dy = tankB.y - tankA.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist < minDist && dist > 0) {
+                    // Calculate push direction (normalized)
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+
+                    // Calculate overlap
+                    const overlap = minDist - dist;
+                    const pushAmount = Math.min(overlap / 2, pushStrength);
+
+                    // Push both tanks apart equally
+                    const pushAX = tankA.x - nx * pushAmount;
+                    const pushAY = tankA.y - ny * pushAmount;
+                    const pushBX = tankB.x + nx * pushAmount;
+                    const pushBY = tankB.y + ny * pushAmount;
+
+                    // Apply push if not colliding with obstacles
+                    if (this.canMoveToObstaclesOnly(pushAX, pushAY)) {
+                        tankA.x = wrapPosition(pushAX, CONFIG.CANVAS_WIDTH);
+                        tankA.y = wrapPosition(pushAY, CONFIG.CANVAS_HEIGHT);
+                    }
+                    if (this.canMoveToObstaclesOnly(pushBX, pushBY)) {
+                        tankB.x = wrapPosition(pushBX, CONFIG.CANVAS_WIDTH);
+                        tankB.y = wrapPosition(pushBY, CONFIG.CANVAS_HEIGHT);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if position is clear of obstacles (ignores other tanks)
+     */
+    canMoveToObstaclesOnly(x, y) {
+        const size = CONFIG.TANK_SIZE;
+        for (const obs of this.obstacles) {
+            if (x + size/2 > obs.x &&
+                x - size/2 < obs.x + obs.width &&
+                y + size/2 > obs.y &&
+                y - size/2 < obs.y + obs.height) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
