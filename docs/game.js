@@ -979,22 +979,25 @@ class Game {
     }
 
     setupEventListeners() {
-        // Keyboard input
+        // Keyboard input - store both original and lowercase for all keys
         document.addEventListener('keydown', (e) => {
-            const key = e.key.toLowerCase();
-            this.keys[key] = true;
-            this.keys[e.key] = true; // Also store original case
+            // Store multiple variations to ensure we catch all cases
+            this.keys[e.key] = true;
+            this.keys[e.key.toLowerCase()] = true;
+            this.keys[e.code] = true; // Also store code (e.g., 'KeyW', 'Space')
 
-            // Prevent space and arrow keys from scrolling
-            if (e.key === ' ' || e.code === 'Space' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            // Prevent default for game controls
+            const gameKeys = ['w', 'a', 's', 'd', 'W', 'A', 'S', 'D', ' ',
+                'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+            if (gameKeys.includes(e.key) || e.code === 'Space') {
                 e.preventDefault();
             }
         });
 
         document.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            this.keys[key] = false;
             this.keys[e.key] = false;
+            this.keys[e.key.toLowerCase()] = false;
+            this.keys[e.code] = false;
         });
 
         // Clear all keys when window loses focus (prevents stuck keys)
@@ -1877,12 +1880,16 @@ class Game {
     handleInput() {
         if (!this.playerTank || this.playerTank.health <= 0 || this.playerTank.respawning) return;
 
-        // Collect input state
+        // Collect input state - check all possible key representations
         const input = {
-            w: this.keys['w'] || this.keys['W'] || this.keys['ArrowUp'] || false,
-            a: this.keys['a'] || this.keys['A'] || this.keys['ArrowLeft'] || false,
-            s: this.keys['s'] || this.keys['S'] || this.keys['ArrowDown'] || false,
-            d: this.keys['d'] || this.keys['D'] || this.keys['ArrowRight'] || false,
+            w: this.keys['w'] || this.keys['W'] || this.keys['KeyW'] ||
+               this.keys['ArrowUp'] || this.keys['arrowup'] || false,
+            a: this.keys['a'] || this.keys['A'] || this.keys['KeyA'] ||
+               this.keys['ArrowLeft'] || this.keys['arrowleft'] || false,
+            s: this.keys['s'] || this.keys['S'] || this.keys['KeyS'] ||
+               this.keys['ArrowDown'] || this.keys['arrowdown'] || false,
+            d: this.keys['d'] || this.keys['D'] || this.keys['KeyD'] ||
+               this.keys['ArrowRight'] || this.keys['arrowright'] || false,
             space: this.keys[' '] || this.keys['Space'] || false
         };
 
