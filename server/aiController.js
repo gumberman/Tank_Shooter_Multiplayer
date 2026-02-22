@@ -3,18 +3,16 @@ const { normalizeAngle, angleDifference } = require('../shared/gameLogic');
 
 /**
  * Simplified AI Controller for server-side bots
- * Includes wall avoidance optimized for axis-aligned rectangular obstacles
+ * Uses smart target switching instead of complex pathfinding
  */
 class AIController {
     constructor() {
-        this.lastInputs = new Map(); // botId -> last input state
-        this.positionHistory = new Map(); // botId -> [{x, y, time}]
-        this.stuckState = new Map(); // botId -> {isStuck, escapeDir, escapeUntil}
-        this.wallSlideState = new Map(); // botId -> {slideAngle, slideUntil}
+        this.positionHistory = new Map(); // botId -> {x, y, time}
+        this.currentTarget = new Map(); // botId -> {type, id, until}
     }
 
     /**
-     * Shortest wrapped distance between two points on toroidal map
+     * Shortest wrapped distance between two points
      */
     wrappedDist(x1, y1, x2, y2) {
         let dx = Math.abs(x2 - x1);
@@ -38,226 +36,227 @@ class AIController {
     }
 
     /**
-     * Direct (non-wrapped) distance between two points
+     * Direct (non-wrapped) distance
      */
     directDist(x1, y1, x2, y2) {
         return Math.hypot(x2 - x1, y2 - y1);
     }
 
     /**
-     * Check if a point collides with an obstacle (with tank size padding)
+     * Check if bot is stuck (hasn't moved much recently and hasn't dealt damage)
      */
-    pointHitsObstacle(x, y, obstacles) {
-        const halfTank = CONFIG.TANK_SIZE / 2;
-        for (const obs of obstacles) {
-            if (x + halfTank > obs.x &&
-                x - halfTank < obs.x + obs.width &&
-                y + halfTank > obs.y &&
-                y - halfTank < obs.y + obs.height) {
-                return obs;
+    isStuck(bot) {
+        const now = Date.now();
+        const stuckTime = 800; // Must not move for 800ms
+        const noDamageTime = 3000; // And no damage dealt in 3s
+
+        // Check damage condition
+        const lastDamage = bot.lastDamageDealt || 0;
+        if (now - lastDamage < noDamageTime) {
+            return false; // Recently dealt damage, not stuck
+        }
+
+        // Check movement
+        let lastPos = this.positionHistory.get(bot.id);
+        if (!lastPos) {
+            this.positionHistory.set(bot.id, { x: bot.x, y: bot.y, time: now });
+            return false;
+        }
+
+        const moved = this.directDist(lastPos.x, lastPos.y, bot.x, bot.y);
+
+        // If moved significantly, update position
+        if (moved > 20) {
+            this.positionHistory.set(bot.id, { x: bot.x, y: bot.y, time: now });
+            return false;
+        }
+
+        // Check if enough time has passed
+        return (now - lastPos.time) > stuckTime;
+    }
+
+    /**
+     * Find all enemies sorted by distance
+     */
+    findEnemies(bot, allTanks) {
+        const enemies = [];
+        for (const tank of allTanks) {
+            if (tank.id === bot.id || tank.team === bot.team || tank.respawning) {
+                continue;
             }
+            const dist = this.wrappedDist(bot.x, bot.y, tank.x, tank.y);
+            enemies.push({ tank, dist });
         }
-        return null;
+        enemies.sort((a, b) => a.dist - b.dist);
+        return enemies;
     }
 
     /**
-     * Find obstacle blocking the path ahead (checks along bot's forward direction)
+     * Find nearest powerup
      */
-    findObstacleAhead(bot, obstacles, lookAhead = 80) {
-        const rad = bot.rotation * Math.PI / 180;
-        const checkX = bot.x + Math.cos(rad) * lookAhead;
-        const checkY = bot.y + Math.sin(rad) * lookAhead;
-        return this.pointHitsObstacle(checkX, checkY, obstacles);
-    }
+    findNearestPowerup(bot, powerups) {
+        if (!powerups || powerups.length === 0) return null;
 
-    /**
-     * For axis-aligned obstacles: determine slide direction to go around
-     * Returns an absolute angle to slide along the wall toward the target
-     */
-    getWallSlideAngle(bot, obstacle, targetX, targetY) {
-        const halfTank = CONFIG.TANK_SIZE / 2;
+        let nearest = null;
+        let minDist = Infinity;
 
-        // Obstacle bounds with tank padding
-        const obsLeft = obstacle.x - halfTank;
-        const obsRight = obstacle.x + obstacle.width + halfTank;
-        const obsTop = obstacle.y - halfTank;
-        const obsBottom = obstacle.y + obstacle.height + halfTank;
-
-        // Determine which face we're approaching based on bot position relative to obstacle center
-        const obsCenterX = obstacle.x + obstacle.width / 2;
-        const obsCenterY = obstacle.y + obstacle.height / 2;
-
-        // Calculate overlap to determine primary blocking axis
-        const overlapX = Math.min(bot.x, obsRight) - Math.max(bot.x, obsLeft);
-        const overlapY = Math.min(bot.y, obsBottom) - Math.max(bot.y, obsTop);
-
-        // Determine if we're hitting a vertical face (left/right) or horizontal face (top/bottom)
-        const hittingVerticalFace = bot.x < obsLeft || bot.x > obsRight ||
-            (overlapX < overlapY && (bot.x < obsCenterX || bot.x > obsCenterX));
-
-        if (bot.x < obsCenterX && (hittingVerticalFace || overlapY > overlapX)) {
-            // Approaching from left - slide up or down
-            return targetY < bot.y ? -90 : 90; // -90 = up, 90 = down
-        } else if (bot.x > obsCenterX && (hittingVerticalFace || overlapY > overlapX)) {
-            // Approaching from right - slide up or down
-            return targetY < bot.y ? -90 : 90;
-        } else if (bot.y < obsCenterY) {
-            // Approaching from top - slide left or right
-            return targetX < bot.x ? 180 : 0; // 180 = left, 0 = right
-        } else {
-            // Approaching from bottom - slide left or right
-            return targetX < bot.x ? 180 : 0;
-        }
-    }
-
-    /**
-     * Update wall slide state - commits to a slide direction briefly to avoid jitter
-     */
-    updateWallSlide(bot, obstacle, targetX, targetY) {
-        const now = Date.now();
-        let slideState = this.wallSlideState.get(bot.id);
-
-        if (!slideState) {
-            slideState = { slideAngle: null, slideUntil: 0 };
-            this.wallSlideState.set(bot.id, slideState);
-        }
-
-        // If currently sliding and time hasn't expired, continue
-        if (slideState.slideAngle !== null && now < slideState.slideUntil) {
-            return slideState.slideAngle;
-        }
-
-        // If obstacle detected, start or refresh slide
-        if (obstacle) {
-            const slideAngle = this.getWallSlideAngle(bot, obstacle, targetX, targetY);
-            slideState.slideAngle = slideAngle;
-            slideState.slideUntil = now + 300; // Commit to direction for 300ms
-            return slideAngle;
-        }
-
-        // No obstacle, clear slide state
-        slideState.slideAngle = null;
-        return null;
-    }
-
-    /**
-     * Update position history and detect if bot is stuck
-     */
-    updateStuckDetection(bot) {
-        const now = Date.now();
-        const historyWindow = 1500;
-        const stuckThreshold = 15;
-        const escapeTime = 500;
-
-        let history = this.positionHistory.get(bot.id);
-        if (!history) {
-            history = [];
-            this.positionHistory.set(bot.id, history);
-        }
-
-        history.push({ x: bot.x, y: bot.y, time: now });
-
-        while (history.length > 0 && now - history[0].time > historyWindow) {
-            history.shift();
-        }
-
-        let stuckState = this.stuckState.get(bot.id);
-        if (!stuckState) {
-            stuckState = { isStuck: false, escapeDir: 1, escapeUntil: 0 };
-            this.stuckState.set(bot.id, stuckState);
-        }
-
-        if (stuckState.isStuck && now > stuckState.escapeUntil) {
-            stuckState.isStuck = false;
-        }
-
-        if (!stuckState.isStuck && history.length >= 2) {
-            const oldest = history[0];
-            const totalMovement = this.directDist(oldest.x, oldest.y, bot.x, bot.y);
-
-            if (totalMovement < stuckThreshold && now - oldest.time >= historyWindow * 0.8) {
-                stuckState.isStuck = true;
-                stuckState.escapeDir = Math.random() > 0.5 ? 1 : -1;
-                stuckState.escapeUntil = now + escapeTime;
-                history.length = 0;
+        for (const powerup of powerups) {
+            const dist = this.wrappedDist(bot.x, bot.y, powerup.x, powerup.y);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = { powerup, dist };
             }
         }
 
-        return stuckState;
+        return nearest;
+    }
+
+    /**
+     * Choose a new target when stuck
+     */
+    chooseAlternateTarget(bot, allTanks, powerups) {
+        const enemies = this.findEnemies(bot, allTanks);
+        const nearestPowerup = this.findNearestPowerup(bot, powerups);
+
+        // Build list of potential targets
+        const targets = [];
+
+        // Add powerup if exists
+        if (nearestPowerup) {
+            targets.push({
+                type: 'powerup',
+                x: nearestPowerup.powerup.x,
+                y: nearestPowerup.powerup.y,
+                dist: nearestPowerup.dist,
+                id: nearestPowerup.powerup.id
+            });
+        }
+
+        // Add enemies (skip the first/nearest one we're probably stuck on)
+        for (let i = 1; i < enemies.length && i < 3; i++) {
+            targets.push({
+                type: 'enemy',
+                x: enemies[i].tank.x,
+                y: enemies[i].tank.y,
+                dist: enemies[i].dist,
+                id: enemies[i].tank.id
+            });
+        }
+
+        // If no alternate targets, just pick any enemy
+        if (targets.length === 0 && enemies.length > 0) {
+            return {
+                type: 'enemy',
+                x: enemies[0].tank.x,
+                y: enemies[0].tank.y,
+                id: enemies[0].tank.id
+            };
+        }
+
+        // Pick closest alternate target
+        targets.sort((a, b) => a.dist - b.dist);
+        return targets[0] || null;
+    }
+
+    /**
+     * Get current target for bot
+     */
+    getTarget(bot, allTanks, powerups) {
+        const now = Date.now();
+        let target = this.currentTarget.get(bot.id);
+
+        // Check if we need a new target
+        const needNewTarget = !target ||
+            now > target.until ||
+            (target.type === 'powerup' && !powerups.find(p => p.id === target.id)) ||
+            (target.type === 'enemy' && !allTanks.find(t => t.id === target.id && !t.respawning));
+
+        if (this.isStuck(bot) || needNewTarget) {
+            const newTarget = this.chooseAlternateTarget(bot, allTanks, powerups);
+            if (newTarget) {
+                // Lock onto this target for 2 seconds
+                this.currentTarget.set(bot.id, {
+                    ...newTarget,
+                    until: now + 2000
+                });
+                // Reset position history when switching targets
+                this.positionHistory.set(bot.id, { x: bot.x, y: bot.y, time: now });
+                return newTarget;
+            }
+        }
+
+        // Return current target or default to nearest enemy
+        if (target && now < target.until) {
+            // Update target position if it's an enemy (they move)
+            if (target.type === 'enemy') {
+                const enemy = allTanks.find(t => t.id === target.id);
+                if (enemy && !enemy.respawning) {
+                    target.x = enemy.x;
+                    target.y = enemy.y;
+                }
+            }
+            return target;
+        }
+
+        // Default: nearest enemy
+        const enemies = this.findEnemies(bot, allTanks);
+        if (enemies.length > 0) {
+            return {
+                type: 'enemy',
+                x: enemies[0].tank.x,
+                y: enemies[0].tank.y,
+                id: enemies[0].tank.id
+            };
+        }
+
+        return null;
     }
 
     /**
      * Get input for a bot
      */
-    getInput(bot, allTanks, bullets, obstacles) {
+    getInput(bot, allTanks, bullets, obstacles, powerups = []) {
         const input = { w: false, a: false, s: false, d: false, space: false };
 
-        // Check if bot is stuck
-        const stuckState = this.updateStuckDetection(bot);
-        if (stuckState.isStuck) {
-            if (stuckState.escapeDir > 0) {
+        const target = this.getTarget(bot, allTanks, powerups);
+        if (!target) {
+            input.w = true;
+            return input;
+        }
+
+        // Navigate toward target
+        const angleToTarget = this.wrappedAngle(bot.x, bot.y, target.x, target.y);
+        const angleDiff = angleDifference(bot.rotation, angleToTarget);
+
+        // Rotate toward target
+        if (Math.abs(angleDiff) > 5) {
+            if (angleDiff > 0) {
                 input.d = true;
             } else {
                 input.a = true;
             }
-            return input;
         }
 
-        // Find nearest enemy
-        const nearestEnemy = this.findNearestEnemy(bot, allTanks);
-        const targetX = nearestEnemy ? nearestEnemy.x : bot.x + Math.cos(bot.rotation * Math.PI / 180) * 100;
-        const targetY = nearestEnemy ? nearestEnemy.y : bot.y + Math.sin(bot.rotation * Math.PI / 180) * 100;
-
-        // Check for obstacle ahead
-        const obstacleAhead = this.findObstacleAhead(bot, obstacles);
-        const slideAngle = this.updateWallSlide(bot, obstacleAhead, targetX, targetY);
-
-        if (slideAngle !== null) {
-            // Wall sliding: turn toward slide angle and move forward
-            const angleDiff = angleDifference(bot.rotation, slideAngle);
-
-            if (Math.abs(angleDiff) > 10) {
-                if (angleDiff > 0) {
-                    input.d = true;
-                } else {
-                    input.a = true;
-                }
-            }
+        // Move forward if roughly facing target
+        if (Math.abs(angleDiff) < 60) {
             input.w = true;
-        } else if (nearestEnemy) {
-            // Normal enemy pursuit
-            const angleToEnemy = this.wrappedAngle(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
-            const angleDiff = angleDifference(bot.rotation, angleToEnemy);
+        }
 
-            if (Math.abs(angleDiff) > 5) {
-                if (angleDiff > 0) {
-                    input.d = true;
-                } else {
-                    input.a = true;
-                }
-            }
-
-            if (Math.abs(angleDiff) < 45) {
-                input.w = true;
-            }
-
-            // Shooting
-            const directDist = this.directDist(bot.x, bot.y, nearestEnemy.x, nearestEnemy.y);
-            if (Math.abs(angleDiff) < 30 && directDist < 900) {
-                if (this.hasClearShot(bot, nearestEnemy, obstacles)) {
+        // Shooting - only at enemies within direct line of sight
+        if (target.type === 'enemy') {
+            const directDist = this.directDist(bot.x, bot.y, target.x, target.y);
+            if (Math.abs(angleDiff) < 25 && directDist < 900) {
+                if (this.hasClearShot(bot, target, obstacles)) {
                     input.space = true;
                 }
             }
-        } else {
-            // No enemy, just move forward
-            input.w = true;
         }
 
         // Dodge incoming bullets
         const threatBullet = this.findThreatBullet(bot, bullets);
         if (threatBullet) {
             input.w = false;
-            // Consistent dodge direction based on bullet position
+            // Dodge away from bullet
             const bulletSide = (threatBullet.x - bot.x) * Math.sin(bot.rotation * Math.PI / 180) -
                                (threatBullet.y - bot.y) * Math.cos(bot.rotation * Math.PI / 180);
             if (bulletSide > 0) {
@@ -270,28 +269,6 @@ class AIController {
         }
 
         return input;
-    }
-
-    /**
-     * Find nearest enemy tank (wrapping-aware distance)
-     */
-    findNearestEnemy(bot, allTanks) {
-        let nearest = null;
-        let minDist = Infinity;
-
-        for (const tank of allTanks) {
-            if (tank.id === bot.id || tank.team === bot.team || tank.respawning) {
-                continue;
-            }
-
-            const dist = this.wrappedDist(bot.x, bot.y, tank.x, tank.y);
-            if (dist < minDist) {
-                minDist = dist;
-                nearest = tank;
-            }
-        }
-
-        return nearest;
     }
 
     /**
@@ -327,12 +304,12 @@ class AIController {
             if (bullet.team === bot.team) continue;
 
             const dist = Math.hypot(bullet.x - bot.x, bullet.y - bot.y);
-            if (dist < 200) {
+            if (dist < 150) {
                 const toBotAngle = Math.atan2(bot.y - bullet.y, bot.x - bullet.x) * 180 / Math.PI;
                 const bulletAngle = Math.atan2(bullet.vy, bullet.vx) * 180 / Math.PI;
-                const angleDiff = Math.abs(angleDifference(bulletAngle, toBotAngle));
+                const diff = Math.abs(angleDifference(bulletAngle, toBotAngle));
 
-                if (angleDiff < 45) {
+                if (diff < 30) {
                     return bullet;
                 }
             }
@@ -345,10 +322,8 @@ class AIController {
      * Clean up state for a bot
      */
     removeBot(botId) {
-        this.lastInputs.delete(botId);
         this.positionHistory.delete(botId);
-        this.stuckState.delete(botId);
-        this.wallSlideState.delete(botId);
+        this.currentTarget.delete(botId);
     }
 }
 

@@ -327,7 +327,8 @@ class GameServer {
                     tank,
                     Array.from(this.tanks.values()),
                     this.bullets,
-                    this.obstacles
+                    this.obstacles,
+                    this.powerups
                 );
                 this.processInput(id, { input });
             }
@@ -417,9 +418,14 @@ class GameServer {
         const damage = bullet.damage || 1;
         tank.health -= damage;
 
+        // Track when shooter last dealt damage (for bot AI)
+        const shooter = this.tanks.get(bullet.ownerId);
+        if (shooter) {
+            shooter.lastDamageDealt = Date.now();
+        }
+
         if (tank.health <= 0) {
             // Tank destroyed
-            const shooter = this.tanks.get(bullet.ownerId);
             if (shooter) {
                 shooter.score++;
                 this.teamScores[shooter.team]++;
