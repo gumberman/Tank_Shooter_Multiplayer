@@ -68,34 +68,44 @@ class AIController {
     getInput(bot, allTanks, bullets, obstacles, powerups = []) {
         const input = { w: true, a: false, s: false, d: false, space: false };
 
-        // Check if bot is currently wall sliding - commit to direction, don't turn
+        // Check if bot is currently wall sliding
         const now = Date.now();
         const isSliding = bot.slidingUntil && now < bot.slidingUntil;
 
         const target = this.findNearestEnemy(bot, allTanks);
+
+        // Determine steering target angle
+        let steerAngle = null;
+        if (isSliding && bot.slideAngle !== undefined) {
+            // Actively steer toward slide direction for smooth wall navigation
+            steerAngle = bot.slideAngle;
+        } else if (target) {
+            // Normal navigation toward enemy
+            steerAngle = this.wrappedAngle(bot.x, bot.y, target.x, target.y);
+        }
+
+        // Apply steering
+        if (steerAngle !== null) {
+            const angleDiff = angleDifference(bot.rotation, steerAngle);
+            if (Math.abs(angleDiff) > 5) {
+                if (angleDiff > 0) {
+                    input.d = true;
+                } else {
+                    input.a = true;
+                }
+            }
+        }
+
         if (!target) {
             // No enemy, just keep moving forward
             return input;
         }
 
-        // Navigate toward target (but not while sliding)
+        // Shooting - only at enemies within direct line of sight
         const angleToTarget = this.wrappedAngle(bot.x, bot.y, target.x, target.y);
         const angleDiff = angleDifference(bot.rotation, angleToTarget);
-
-        // Only rotate if not sliding along a wall
-        if (!isSliding && Math.abs(angleDiff) > 5) {
-            if (angleDiff > 0) {
-                input.d = true;
-            } else {
-                input.a = true;
-            }
-        }
-
-        // Always move forward - wall sliding handles obstacles
-        input.w = true;
-
-        // Shooting - only at enemies within direct line of sight
         const directDist = this.directDist(bot.x, bot.y, target.x, target.y);
+
         if (Math.abs(angleDiff) < 25 && directDist < 900) {
             if (this.hasClearShot(bot, target, obstacles)) {
                 input.space = true;

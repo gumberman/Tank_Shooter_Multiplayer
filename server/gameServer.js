@@ -240,8 +240,9 @@ class GameServer {
         const slideX = wrapPosition(tank.x + dx * slideFriction, CONFIG.CANVAS_WIDTH);
         if (Math.abs(dx) > 0.1 && this.canMoveTo(slideX, tank.y, tank.id)) {
             tank.x = slideX;
-            // Mark tank as sliding (for bot AI)
+            // Mark tank as sliding with direction (for bot AI)
             tank.slidingUntil = now + 1000;
+            tank.slideAngle = dx > 0 ? 0 : 180; // East or West
             return;
         }
 
@@ -249,8 +250,9 @@ class GameServer {
         const slideY = wrapPosition(tank.y + dy * slideFriction, CONFIG.CANVAS_HEIGHT);
         if (Math.abs(dy) > 0.1 && this.canMoveTo(tank.x, slideY, tank.id)) {
             tank.y = slideY;
-            // Mark tank as sliding (for bot AI)
+            // Mark tank as sliding with direction (for bot AI)
             tank.slidingUntil = now + 1000;
+            tank.slideAngle = dy > 0 ? 90 : -90; // South or North
         }
     }
 
