@@ -235,26 +235,33 @@ class GameServer {
             return;
         }
 
+        // Check what's blocking us
+        const blockingTank = this.getTankAt(newX, newY, tank.id);
+        const blockedByObstacle = this.hitsObstacle(newX, newY);
+
+        // Track blocking info for AI
+        tank.blockedByTank = blockingTank;
+        tank.blockedByObstacle = blockedByObstacle;
+
+        // If blocked by tank, don't slide - let AI handle it
+        if (blockingTank) {
+            return;
+        }
+
         // Wall sliding with friction (40% of normal speed)
         const slideFriction = 0.4;
         const now = Date.now();
 
-        // Wall sliding: try X-only movement with friction
+        // Wall sliding: try X-only movement with friction (lowered threshold to 0.01)
         const slideX = wrapPosition(tank.x + dx * slideFriction, CONFIG.CANVAS_WIDTH);
-        if (Math.abs(dx) > 0.1 && this.canMoveTo(slideX, tank.y, tank.id)) {
+        if (Math.abs(dx) > 0.01 && this.canMoveTo(slideX, tank.y, tank.id)) {
             tank.x = slideX;
             tank.slidingUntil = now + 1000;
 
             // Smart escape angle based on tank's heading and wall direction
-            // Wall is blocking Y movement - we slide along X
-            const slideDir = dx > 0 ? 0 : 180; // Base X direction (east or west)
-
-            // How much was tank heading into the wall vs along it? (0 to 1)
-            const totalMovement = Math.abs(dx) + Math.abs(dy) + 0.01;
+            const slideDir = dx > 0 ? 0 : 180;
+            const totalMovement = Math.abs(dx) + Math.abs(dy) + 0.001;
             const wallPenetration = Math.abs(dy) / totalMovement;
-
-            // Steer away more aggressively if heading more directly into wall
-            // Range: 25° (glancing) to 65° (head-on)
             const escapeStrength = 25 + wallPenetration * 40;
             const awayFromWall = dy > 0 ? -escapeStrength : escapeStrength;
 
@@ -262,26 +269,51 @@ class GameServer {
             return;
         }
 
-        // Wall sliding: try Y-only movement with friction
+        // Wall sliding: try Y-only movement with friction (lowered threshold to 0.01)
         const slideY = wrapPosition(tank.y + dy * slideFriction, CONFIG.CANVAS_HEIGHT);
-        if (Math.abs(dy) > 0.1 && this.canMoveTo(tank.x, slideY, tank.id)) {
+        if (Math.abs(dy) > 0.01 && this.canMoveTo(tank.x, slideY, tank.id)) {
             tank.y = slideY;
             tank.slidingUntil = now + 1000;
 
             // Smart escape angle based on tank's heading and wall direction
-            // Wall is blocking X movement - we slide along Y
-            const slideDir = dy > 0 ? 90 : -90; // Base Y direction (south or north)
-
-            // How much was tank heading into the wall vs along it? (0 to 1)
-            const totalMovement = Math.abs(dx) + Math.abs(dy) + 0.01;
+            const slideDir = dy > 0 ? 90 : -90;
+            const totalMovement = Math.abs(dx) + Math.abs(dy) + 0.001;
             const wallPenetration = Math.abs(dx) / totalMovement;
-
-            // Steer away more aggressively if heading more directly into wall
             const escapeStrength = 25 + wallPenetration * 40;
             const awayFromWall = dx > 0 ? -escapeStrength : escapeStrength;
 
             tank.slideAngle = slideDir + awayFromWall;
         }
+    }
+
+    /**
+     * Check if position hits an obstacle
+     */
+    hitsObstacle(x, y) {
+        const size = CONFIG.TANK_SIZE;
+        for (const obs of this.obstacles) {
+            if (x + size/2 > obs.x &&
+                x - size/2 < obs.x + obs.width &&
+                y + size/2 > obs.y &&
+                y - size/2 < obs.y + obs.height) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get tank at position (excluding self)
+     */
+    getTankAt(x, y, excludeId) {
+        for (const [id, otherTank] of this.tanks.entries()) {
+            if (id === excludeId || otherTank.respawning) continue;
+            const dist = Math.hypot(otherTank.x - x, otherTank.y - y);
+            if (dist < CONFIG.TANK_SIZE) {
+                return otherTank;
+            }
+        }
+        return null;
     }
 
     /**

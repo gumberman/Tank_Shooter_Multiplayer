@@ -68,11 +68,50 @@ class AIController {
     getInput(bot, allTanks, bullets, obstacles, powerups = []) {
         const input = { w: true, a: false, s: false, d: false, space: false };
 
-        // Check if bot is currently wall sliding
         const now = Date.now();
         const isSliding = bot.slidingUntil && now < bot.slidingUntil;
-
         const target = this.findNearestEnemy(bot, allTanks);
+
+        // Handle tank collision
+        if (bot.blockedByTank) {
+            const blockedBy = bot.blockedByTank;
+            const angleToBlocker = this.wrappedAngle(bot.x, bot.y, blockedBy.x, blockedBy.y);
+
+            if (blockedBy.team === bot.team) {
+                // Friendly tank - steer away from it
+                const awayAngle = angleToBlocker + 180; // Opposite direction
+                const angleDiff = angleDifference(bot.rotation, awayAngle);
+
+                // Turn away
+                if (angleDiff > 0) {
+                    input.d = true;
+                } else {
+                    input.a = true;
+                }
+                // Keep moving to slide past
+                input.w = true;
+                return input;
+            } else {
+                // Enemy tank - stop and shoot!
+                input.w = false;
+                const angleDiff = angleDifference(bot.rotation, angleToBlocker);
+
+                // Aim at enemy
+                if (Math.abs(angleDiff) > 5) {
+                    if (angleDiff > 0) {
+                        input.d = true;
+                    } else {
+                        input.a = true;
+                    }
+                }
+
+                // Shoot if aimed
+                if (Math.abs(angleDiff) < 30) {
+                    input.space = true;
+                }
+                return input;
+            }
+        }
 
         // Determine steering target angle
         let steerAngle = null;
