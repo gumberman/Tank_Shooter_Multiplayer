@@ -17,7 +17,7 @@
         NUM_OBSTACLES: 6, // Fixed for multiplayer consistency
         TICK_RATE: 16, // Client render rate
         SERVER_TICK_RATE: 33, // Server update rate (ms) – ~30fps saves CPU/bandwidth
-        MAX_TEAM_SIZE: 3,
+        MAX_TEAM_SIZE: 4,
         BASE_RESPAWN_TIME: 1000,
         RESPAWN_INCREMENT: 1000,
         MAX_RESPAWN_TIME: 10000,
@@ -43,7 +43,7 @@
 
     // Network constants
     exports.NETWORK = {
-        MAX_ROOM_PLAYERS: 6,
+        MAX_ROOM_PLAYERS: 8,
         MIN_ROOM_PLAYERS: 2,
         ROOM_CODE_LENGTH: 6,
         DISCONNECT_GRACE_PERIOD: 5000, // ms

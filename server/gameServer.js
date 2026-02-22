@@ -146,15 +146,25 @@ class GameServer {
         const { w, a, s, d, space } = input.input;
 
         // Rotation (speed boost also doubles turn rate)
+        // Reverse controls when moving backward (like a car)
         const now2 = Date.now();
         const hasSpeedBoost = tank.activePowerups &&
             tank.activePowerups.some(p => p.type === 'SPEED_BOOST' && p.expiresAt > now2);
         const turnSpeed = CONFIG.ROTATION_SPEED * (hasSpeedBoost ? 2 : 1);
+        const movingBackward = s && !w;
         if (a) {
-            tank.rotation = normalizeAngle(tank.rotation - turnSpeed);
+            if (movingBackward) {
+                tank.rotation = normalizeAngle(tank.rotation + turnSpeed); // Reversed when backing up
+            } else {
+                tank.rotation = normalizeAngle(tank.rotation - turnSpeed);
+            }
         }
         if (d) {
-            tank.rotation = normalizeAngle(tank.rotation + turnSpeed);
+            if (movingBackward) {
+                tank.rotation = normalizeAngle(tank.rotation - turnSpeed); // Reversed when backing up
+            } else {
+                tank.rotation = normalizeAngle(tank.rotation + turnSpeed);
+            }
         }
 
         // Movement
