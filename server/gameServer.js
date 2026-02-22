@@ -201,19 +201,19 @@ class GameServer {
     }
 
     /**
-     * Get firing penalty multiplier (40% slowdown decaying over 750ms after shooting)
+     * Get firing penalty multiplier (30% slowdown decaying over 250ms after shooting)
      */
     getFiringPenalty(tank) {
         const now = Date.now();
         const timeSinceShot = now - (tank.lastShot || 0);
-        const PENALTY_DURATION = 750; // ms
-        const MAX_PENALTY = 0.4; // 40% reduction
+        const PENALTY_DURATION = 250; // ms
+        const MAX_PENALTY = 0.3; // 30% reduction
 
         if (timeSinceShot >= PENALTY_DURATION) {
             return 1.0; // No penalty
         }
-        // Linear decay from 0.6 to 1.0 over 750ms
-        return 0.6 + (MAX_PENALTY * (timeSinceShot / PENALTY_DURATION));
+        // Linear decay from 0.7 to 1.0 over 250ms
+        return 0.7 + (MAX_PENALTY * (timeSinceShot / PENALTY_DURATION));
     }
 
     /**
