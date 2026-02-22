@@ -355,8 +355,10 @@ class GameServer {
      */
     pushTanksApart() {
         const tanks = Array.from(this.tanks.values()).filter(t => !t.respawning);
-        const pushStrength = 2; // Pixels per frame to push apart
-        const minDist = CONFIG.TANK_SIZE;
+        const pushStrength = 3; // Pixels per frame to push apart
+        // Push threshold slightly larger than collision distance to unstick tanks at boundary
+        const pushThreshold = CONFIG.TANK_SIZE + 10;
+        const targetDist = CONFIG.TANK_SIZE + 15; // Target separation distance
 
         for (let i = 0; i < tanks.length; i++) {
             for (let j = i + 1; j < tanks.length; j++) {
@@ -367,29 +369,31 @@ class GameServer {
                 const dy = tankB.y - tankA.y;
                 const dist = Math.hypot(dx, dy);
 
-                if (dist < minDist && dist > 0) {
+                if (dist < pushThreshold && dist > 0) {
                     // Calculate push direction (normalized)
                     const nx = dx / dist;
                     const ny = dy / dist;
 
-                    // Calculate overlap
-                    const overlap = minDist - dist;
-                    const pushAmount = Math.min(overlap / 2, pushStrength);
+                    // Calculate how much we need to separate
+                    const needed = targetDist - dist;
+                    const pushAmount = Math.min(needed / 2, pushStrength);
 
-                    // Push both tanks apart equally
-                    const pushAX = tankA.x - nx * pushAmount;
-                    const pushAY = tankA.y - ny * pushAmount;
-                    const pushBX = tankB.x + nx * pushAmount;
-                    const pushBY = tankB.y + ny * pushAmount;
+                    if (pushAmount > 0) {
+                        // Push both tanks apart equally
+                        const pushAX = tankA.x - nx * pushAmount;
+                        const pushAY = tankA.y - ny * pushAmount;
+                        const pushBX = tankB.x + nx * pushAmount;
+                        const pushBY = tankB.y + ny * pushAmount;
 
-                    // Apply push if not colliding with obstacles
-                    if (this.canMoveToObstaclesOnly(pushAX, pushAY)) {
-                        tankA.x = wrapPosition(pushAX, CONFIG.CANVAS_WIDTH);
-                        tankA.y = wrapPosition(pushAY, CONFIG.CANVAS_HEIGHT);
-                    }
-                    if (this.canMoveToObstaclesOnly(pushBX, pushBY)) {
-                        tankB.x = wrapPosition(pushBX, CONFIG.CANVAS_WIDTH);
-                        tankB.y = wrapPosition(pushBY, CONFIG.CANVAS_HEIGHT);
+                        // Apply push if not colliding with obstacles
+                        if (this.canMoveToObstaclesOnly(pushAX, pushAY)) {
+                            tankA.x = wrapPosition(pushAX, CONFIG.CANVAS_WIDTH);
+                            tankA.y = wrapPosition(pushAY, CONFIG.CANVAS_HEIGHT);
+                        }
+                        if (this.canMoveToObstaclesOnly(pushBX, pushBY)) {
+                            tankB.x = wrapPosition(pushBX, CONFIG.CANVAS_WIDTH);
+                            tankB.y = wrapPosition(pushBY, CONFIG.CANVAS_HEIGHT);
+                        }
                     }
                 }
             }
