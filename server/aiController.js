@@ -63,6 +63,25 @@ class AIController {
     }
 
     /**
+     * Find tank in bot's path (within collision distance ahead)
+     */
+    findTankAhead(bot, allTanks) {
+        const rad = bot.rotation * Math.PI / 180;
+        const checkDist = CONFIG.TANK_SIZE + 10; // Just ahead of collision range
+        const aheadX = bot.x + Math.cos(rad) * checkDist;
+        const aheadY = bot.y + Math.sin(rad) * checkDist;
+
+        for (const tank of allTanks) {
+            if (tank.id === bot.id || tank.respawning) continue;
+            const dist = this.directDist(aheadX, aheadY, tank.x, tank.y);
+            if (dist < CONFIG.TANK_SIZE) {
+                return tank;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get input for a bot
      */
     getInput(bot, allTanks, bullets, obstacles, powerups = []) {
@@ -72,31 +91,28 @@ class AIController {
         const isSliding = bot.slidingUntil && now < bot.slidingUntil;
         const target = this.findNearestEnemy(bot, allTanks);
 
-        // Handle tank collision
-        if (bot.blockedByTank) {
-            const blockedBy = bot.blockedByTank;
-            const angleToBlocker = this.wrappedAngle(bot.x, bot.y, blockedBy.x, blockedBy.y);
+        // Check for tank directly ahead
+        const tankAhead = this.findTankAhead(bot, allTanks);
+        if (tankAhead) {
+            const angleToTank = this.wrappedAngle(bot.x, bot.y, tankAhead.x, tankAhead.y);
 
-            if (blockedBy.team === bot.team) {
-                // Friendly tank - steer away from it
-                const awayAngle = angleToBlocker + 180; // Opposite direction
+            if (tankAhead.team === bot.team) {
+                // Friendly tank ahead - steer away
+                const awayAngle = angleToTank + 90; // Turn perpendicular
                 const angleDiff = angleDifference(bot.rotation, awayAngle);
 
-                // Turn away
                 if (angleDiff > 0) {
                     input.d = true;
                 } else {
                     input.a = true;
                 }
-                // Keep moving to slide past
                 input.w = true;
                 return input;
             } else {
-                // Enemy tank - stop and shoot!
+                // Enemy tank ahead - stop and shoot!
                 input.w = false;
-                const angleDiff = angleDifference(bot.rotation, angleToBlocker);
+                const angleDiff = angleDifference(bot.rotation, angleToTank);
 
-                // Aim at enemy
                 if (Math.abs(angleDiff) > 5) {
                     if (angleDiff > 0) {
                         input.d = true;
@@ -105,7 +121,6 @@ class AIController {
                     }
                 }
 
-                // Shoot if aimed
                 if (Math.abs(angleDiff) < 30) {
                     input.space = true;
                 }

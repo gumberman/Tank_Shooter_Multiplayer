@@ -235,15 +235,8 @@ class GameServer {
             return;
         }
 
-        // Check what's blocking us
+        // Check if blocked by tank (don't slide through tanks)
         const blockingTank = this.getTankAt(newX, newY, tank.id);
-        const blockedByObstacle = this.hitsObstacle(newX, newY);
-
-        // Track blocking info for AI
-        tank.blockedByTank = blockingTank;
-        tank.blockedByObstacle = blockedByObstacle;
-
-        // If blocked by tank, don't slide - let AI handle it
         if (blockingTank) {
             return;
         }
