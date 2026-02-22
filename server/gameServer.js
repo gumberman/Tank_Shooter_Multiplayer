@@ -209,7 +209,7 @@ class GameServer {
     }
 
     /**
-     * Move tank forward or backward - with wall sliding
+     * Move tank forward or backward - with wall sliding and friction
      */
     moveTank(tank, direction) {
         const rad = tank.rotation * Math.PI / 180;
@@ -232,15 +232,18 @@ class GameServer {
             return;
         }
 
-        // Wall sliding: try X-only movement
-        const slideX = wrapPosition(tank.x + dx, CONFIG.CANVAS_WIDTH);
+        // Wall sliding with friction (40% of normal speed)
+        const slideFriction = 0.4;
+
+        // Wall sliding: try X-only movement with friction
+        const slideX = wrapPosition(tank.x + dx * slideFriction, CONFIG.CANVAS_WIDTH);
         if (Math.abs(dx) > 0.1 && this.canMoveTo(slideX, tank.y, tank.id)) {
             tank.x = slideX;
             return;
         }
 
-        // Wall sliding: try Y-only movement
-        const slideY = wrapPosition(tank.y + dy, CONFIG.CANVAS_HEIGHT);
+        // Wall sliding: try Y-only movement with friction
+        const slideY = wrapPosition(tank.y + dy * slideFriction, CONFIG.CANVAS_HEIGHT);
         if (Math.abs(dy) > 0.1 && this.canMoveTo(tank.x, slideY, tank.id)) {
             tank.y = slideY;
         }
