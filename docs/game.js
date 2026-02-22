@@ -10,35 +10,53 @@ const CANVAS_HEIGHT = CONFIG.CANVAS_HEIGHT;
 const BULLET_RADIUS = CONFIG.BULLET_RADIUS;
 const POWERUP_RADIUS = CONFIG.POWERUP_RADIUS || 40;
 
-// Pre-rendered player indicator ring sprite (built once)
+// Pre-rendered player indicator triangle sprite (built once)
 let playerIndicatorSprite = null;
 function getPlayerIndicatorSprite() {
     if (playerIndicatorSprite) return playerIndicatorSprite;
-    const baseR = TANK_SIZE / 2 + 15;
-    const size = (baseR + 20) * 2;
+    const size = TANK_SIZE * 2.5;
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
     const cx = size / 2, cy = size / 2;
-    // Outer glow layers
-    ctx.strokeStyle = '#ffff00';
+
+    // Triangle pointing right (will rotate with tank)
+    const tipX = cx + TANK_SIZE * 0.9;  // Point ahead of tank
+    const baseX = cx - TANK_SIZE * 0.5;  // Base behind tank center
+    const wingSpread = TANK_SIZE * 0.7;  // Width of triangle base
+
+    // Outer glow layer
+    ctx.fillStyle = '#ffff00';
     ctx.globalAlpha = 0.15;
-    ctx.lineWidth = 16;
     ctx.beginPath();
-    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.moveTo(tipX + 8, cy);
+    ctx.lineTo(baseX - 8, cy - wingSpread - 8);
+    ctx.lineTo(baseX - 8, cy + wingSpread + 8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Middle glow layer
     ctx.globalAlpha = 0.3;
-    ctx.lineWidth = 10;
     ctx.beginPath();
-    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
-    ctx.stroke();
-    // Core ring
+    ctx.moveTo(tipX + 4, cy);
+    ctx.lineTo(baseX - 4, cy - wingSpread - 4);
+    ctx.lineTo(baseX - 4, cy + wingSpread + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Core triangle (outline)
     ctx.globalAlpha = 1;
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#ffff00';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+    ctx.moveTo(tipX, cy);
+    ctx.lineTo(baseX, cy - wingSpread);
+    ctx.lineTo(baseX, cy + wingSpread);
+    ctx.closePath();
     ctx.stroke();
+
     playerIndicatorSprite = canvas;
     return canvas;
 }
@@ -761,6 +779,14 @@ class Tank {
         ctx.beginPath();
         ctx.roundRect(0, -barrelWidth / 2, barrelLength, barrelWidth, [0, barrelWidth / 2, barrelWidth / 2, 0]);
         ctx.fill();
+
+        // Draw 2 bright stripes at end of barrel for visibility
+        const stripeWidth = 4;
+        const stripeGap = 6;
+        const muzzleEnd = barrelLength - 6;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(muzzleEnd - stripeWidth, -barrelWidth / 2 + 3, stripeWidth, barrelWidth - 6);
+        ctx.fillRect(muzzleEnd - stripeWidth * 2 - stripeGap, -barrelWidth / 2 + 3, stripeWidth, barrelWidth - 6);
 
         // Draw health indicator
         if (this.health < CONFIG.MAX_HEALTH) {
